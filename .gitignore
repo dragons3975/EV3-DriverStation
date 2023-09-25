@@ -6,6 +6,7 @@
 *.py[cod]
 **/.ipynb_checkpoints/
 **/__pycache__/
+**/*.egg-info/
 
 # Python env
-venv/
+venv*/
