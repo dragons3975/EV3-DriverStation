@@ -9,3 +9,4 @@
 
 # Python env
 venv/
+*.egg-info
