@@ -3,32 +3,36 @@ import signal
 import sys
 
 
-def check_installation():
+def launch():
+    GuiApp = safe_import_GuiApp(allow_install=True)
+    if GuiApp is None:
+        return 1
+    signal.signal(signal.SIGINT, signal.SIG_DFL)    # Allow Ctrl-C to close the program
+    return GuiApp().exec()
+
+
+def safe_import_GuiApp(allow_install=True):
     try:
-        import src.EV3DriverStation.app  # noqa: F401
+        from src.EV3DriverStation.app import GuiApp  # noqa: F401
     except ImportError as e:
         print('Missing dependancies for EV3-DriverStation.')
         print(e)
     else:
-        return True
+        return GuiApp
 
     from tkinter import messagebox
-    if messagebox.askyesno('EV3-DriverStation dependancies are not installed', 
-                            "EV3-DriverStation relies on several python packages.\n" +
-                            "Do you want to install them now?"
-                            ) and install():
-        return True
+    if allow_install \
+        and messagebox.askyesno('EV3-DriverStation dependancies are not installed', 
+                                "EV3-DriverStation relies on several python packages.\n" +
+                                "Do you want to install them now?"
+                            )\
+        and install():
+        return safe_import_GuiApp(allow_install=False)
     else:
         messagebox.showerror('EV3-DriverStation dependancies are not installed', 
                                 "EV3-DriverStation cannot run without its dependancies.\n" +
                                 "Please install them manually.")
-        return False
-
-
-def launch():
-    from src.EV3DriverStation.app import GuiApp
-    signal.signal(signal.SIGINT, signal.SIG_DFL)    # Allow Ctrl-C to close the program
-    return GuiApp().exec()
+        return None
 
 
 def install():
@@ -109,6 +113,4 @@ def install():
 
 
 if __name__ == '__main__':
-    if not check_installation():
-        sys.exit(1)
     sys.exit(launch())
