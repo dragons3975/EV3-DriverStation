@@ -41,10 +41,12 @@ class GuiApp(QGuiApplication):
         self.engine.load(self.ui_path('main.qml'))
 
         r = super().exec_()
+        # Delete the engine to avoid type errors when closing the program
+        del self.engine
 
         self.robot_network.stop_udp_refresh()
         self.robot.enabled = False
-        self.robot_network.send_udp()
+        self.robot_network.send_udp(force_controller_neutral=True)
         self.controllersManager.quit_pygame()
         return r
 
