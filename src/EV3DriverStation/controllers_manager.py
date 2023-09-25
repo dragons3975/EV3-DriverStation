@@ -2,7 +2,6 @@ from __future__ import annotations
 
 __all__ = ["ControllersManager", "Controller", "ControllerState"]
 
-import struct
 from typing import NamedTuple
 
 import pygame
@@ -226,13 +225,6 @@ class ControllerState(NamedTuple):
     @property
     def buttons(self):
         return self[6:]
-
-    def as_bytes(self):
-        axis_msg = struct.pack("f"*6, *self.axis)
-        buttons = 0
-        for i, b in enumerate(self.buttons):
-            buttons |= b << i
-        return axis_msg + struct.pack("i", buttons)
 
     def as_dict(self):
         return self._asdict()

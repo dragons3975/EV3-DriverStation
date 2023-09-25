@@ -1,4 +1,5 @@
 import socket
+import struct
 import sys
 
 from PySide6.QtCore import Property, QObject, QSettings, QTimer, Signal, Slot
@@ -74,7 +75,12 @@ class RobotNetwork(QObject):
 
         states = self.controllers.get_pilot_controllers_states()
         for state in states:
-            message += state.as_bytes()
+            axis_msg = struct.pack("f"*6, *state.axis)
+            buttons = 0
+            for i, b in enumerate(state.buttons):
+                buttons |= b << i
+            message += axis_msg + struct.pack("i", buttons)
+
         try:
             self.udp_socket.sendto(message, (self._robot_ip, 5005))
         except socket.gaierror:
