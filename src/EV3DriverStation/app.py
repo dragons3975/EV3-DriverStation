@@ -17,9 +17,6 @@ class GuiApp(QGuiApplication):
         super().__init__(sys.argv)
 
         self.setWindowIcon(QIcon(self.ui_path('icon.png')))
-
-        self.engine = QQmlApplicationEngine()
-        self.ctx = self.engine.rootContext()
         
         self.app_status = AppStatus()
         self.app_status.panelChanged.connect(self.aknowledge_panel_changed)
@@ -27,9 +24,10 @@ class GuiApp(QGuiApplication):
         self.robot = Robot(self.controllersManager.keyboard_controller)
         self.robot_network = RobotNetwork(self.robot, self.controllersManager)
 
+        self.engine = QQmlApplicationEngine()
+        self.ctx = self.engine.rootContext()
         QQuickStyle.setStyle('Material')
-        self.engine.quit.connect(self.quit)
-        
+        self.engine.exit.connect(self.quit)
 
     def exec(self):
         self.controllersManager.init_pygame()
