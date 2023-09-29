@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from enum import Enum
 
 from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
@@ -7,24 +8,24 @@ from PySide6.QtGui import QKeyEvent
 
 
 class Robot(QObject):
-    ip_changed = Signal(str)
-    mode_changed = Signal(str)
-    enabled_changed = Signal(bool)
-    time_changed = Signal(int)
-    auto_disable_changed = Signal(bool)
-
     def __init__(self, keyboard_controller):
         super().__init__()
         self._mode: RobotMode = RobotMode.TELEOP
         self._enabled: bool = False
         self._auto_disable: bool = False
+        self._time = 0
+
         self._keyboard_controller = keyboard_controller
         self.capture_keyboard = False
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.increment_timer)
-        self._time = 0
 
+    #====================#
+    #== QML PROPERTIES ==#
+    #====================#
+    # --- Robot mode --- #
+    mode_changed = Signal(str)
     @Property(str, notify=mode_changed)
     def mode(self) -> RobotMode:
         return self._mode
@@ -38,6 +39,8 @@ class Robot(QObject):
         # Reset timer when mode changes
         self.reset_timer()
 
+    # --- Robot enabled --- #
+    enabled_changed = Signal(bool)
     @Property(bool, notify=enabled_changed)
     def enabled(self) -> bool:
         return self._enabled
@@ -58,6 +61,8 @@ class Robot(QObject):
             if self.mode == RobotMode.AUTO:
                 self.reset_timer()
 
+    # --- Auto disable --- #
+    auto_disable_changed = Signal(bool)
     @Property(bool, notify=auto_disable_changed)
     def auto_disable(self) -> bool:
         return self._auto_disable
@@ -67,20 +72,11 @@ class Robot(QObject):
         self._auto_disable = value
         self.auto_disable_changed.emit(self._auto_disable)
 
+    # --- Enabled Timer --- #
+    time_changed = Signal(int)
     @Property(int, notify=time_changed)
     def time(self) -> int:
         return self._time
-
-    def increment_timer(self):
-        self._time += 1
-        self.time_changed.emit(self._time)
-
-        # Auto disable robot after 60 seconds in auto and 120 seconds in teleop
-        if self.auto_disable:
-            if self.mode == RobotMode.AUTO and self.time >= 60:
-                self.enabled = False
-            elif self.mode == RobotMode.TELEOP and self.time >= 120:
-                self.enabled = False
 
     @Slot()
     def reset_timer(self):
@@ -95,6 +91,19 @@ class Robot(QObject):
     def stop_timer(self):
         self.timer.stop()
 
+    def increment_timer(self):
+        self._time += 1
+        self.time_changed.emit(self._time)
+
+        # Auto disable robot after 60 seconds in auto and 120 seconds in teleop
+        if self.auto_disable:
+            if self.mode == RobotMode.AUTO and self.time >= 60:
+                self.enabled = False
+            elif self.mode == RobotMode.TELEOP and self.time >= 120:
+                self.enabled = False
+
+    #====================#
+
     @Slot(QObject)
     def install_event_filter(self, obj: QObject):
         obj.installEventFilter(self)
@@ -104,10 +113,15 @@ class Robot(QObject):
             return False
 
         if event.type() in (QKeyEvent.KeyPress, QKeyEvent.KeyRelease):
+            press = event.type() == QKeyEvent.KeyPress
+            if event.isAutoRepeat():
+                return True
             if event.key() == Qt.Key_Space:
-                self.enabled = False
+                if press:
+                    self.enabled = False
             elif event.key() == Qt.Key_Return:
-                self.enabled = True
+                if press:
+                    self.enabled = True
             else:
                 return self._keyboard_controller.key_event(event)
             return True

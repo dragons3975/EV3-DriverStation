@@ -1,8 +1,8 @@
 from time import sleep, time
 
-from .controllers_manager import ControllersManager, ControllerState
-from .robot import Robot, RobotMode
-from .robot_network import RobotNetwork
+from EV3DriverStation.controllers import ControllersManager, ControllerState
+from EV3DriverStation.network import RobotNetwork
+from EV3DriverStation.robot import Robot, RobotMode
 
 
 class RobotAPI:

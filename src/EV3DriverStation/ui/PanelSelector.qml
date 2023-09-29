@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Controls.Material 2.15
 
 Rectangle {
-    width: 180
+    width: 170
     height: 300
 
     color: Material.backgroundColor
@@ -22,8 +22,18 @@ Rectangle {
         Layout.maximumHeight: height
 
         padding: 0
+        leftPadding: 55
         bottomInset: 0
         topInset: 0
+
+        contentItem: Text {
+            horizontalAlignment : Text.AlignLeft
+            verticalAlignment: Text.AlignVCenter
+            text: panelButton.text
+            color: Material.foreground
+            font: panelButton.font
+            antialiasing: true
+        }
 
         Material.background: selected ? Material.primaryColor : Material.frameColor
         Material.elevation: selected ? 5 : -5
@@ -41,7 +51,13 @@ Rectangle {
 
         PanelButton {
             panel: 'Robot'
-            text: qsTr("Robot Status")
+            text: qsTr("Robot")
+
+            IconRobotStatus {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 7
+            }
         }
 
         Item {
@@ -53,10 +69,22 @@ Rectangle {
         PanelButton {
             panel: 'Controllers'
             text: qsTr("Controllers")
+
+            IconControllerStatus {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 7
+            }
         }
         PanelButton {
             panel: 'Network'
             text: qsTr("Network")
+
+            IconNetworkStatus{
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 10
+            }
         }
 
         Item {

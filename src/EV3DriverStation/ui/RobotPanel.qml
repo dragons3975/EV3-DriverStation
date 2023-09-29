@@ -2,12 +2,19 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts
 
+import "CustomUI/"
+
 Rectangle {
     width: 1000
     height: 300
 
     id: root
     color: Material.backgroundColor
+
+    DisableRect {
+        visible: network.connectionStatus !== "Connected"
+        text: "Robot is Disconnected"
+    }
 
     property int modeButtonHeight: 40
     component ModeButton: Button {
@@ -123,7 +130,7 @@ Rectangle {
                         anchors.fill: parent
                         PlayStopButton{
                             id: startButton
-                            icon.source: "play.svg"
+                            icon.source: "assets/play.svg"
                             Material.background: Material.Green
 
                             enabled: robot.enabled
@@ -131,7 +138,7 @@ Rectangle {
                         }
                         PlayStopButton{
                             id: stopButton
-                            icon.source: robot.mode=="Autonomous" ? "stop.svg" : "pause.svg"
+                            icon.source: robot.mode=="Autonomous" ? "assets/stop.svg" : "assets/pause.svg"
                             Material.background: Material.Red
                             
                             enabled: !robot.enabled
@@ -198,13 +205,74 @@ Rectangle {
                     font.pixelSize: 17
                 }
 
-                Label {
+                Item {
+                    Layout.fillWidth: true
+                    height: 10
+                }
+
+                ListView {
+                    id: telemetryList
+                    clip: true
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    text: "Not yet implemented"
-                    leftPadding: 30
-                    horizontalAlignment: Qt.AlignHCenter
-                    verticalAlignment: Qt.AlignVCenter
+
+                    model: telemetry.telemetryData
+
+                    delegate: Entry {
+                        width: telemetryList.width
+                        name: modelData.key
+                        value: modelData.value
+                    }
+
+                    Label{
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: -30
+                        visible: network.connectionStatus === "Connected" &&  telemetry.telemetryStatus === "Unavailable"
+                        text: {
+                            if (telemetry.telemetryStatus === "Connecting") return "Connecting to Telemetry..."
+                            else return "Telemetry is unavailable"
+                        }
+                    }
+
+                    ScrollIndicator.vertical: ScrollIndicator { }
+                }
+
+                Row {
+                    Layout.fillWidth: true
+
+                    Entry {
+                        width: parent.width / 2
+                        name: "Voltage:"
+                        value: telemetry.voltage.toFixed(2)
+                        suffix: " V"
+                        isNA: telemetry.voltage === 0
+                        color: {
+                            if (telemetry.voltage > 7) return Material.color(Material.LightGreen)
+                            else if (telemetry.voltage > 6) return Material.color(Material.Orange)
+                            else return Material.color(Material.Red)
+                        }
+                    }
+                    
+                    Entry {
+                        width: parent.width / 2
+                        name: "CPU Load:"
+                        value: telemetry.cpu
+                        suffix: "%"
+                        isNA: telemetry.cpu === 0
+                        color: {
+                            if (telemetry.cpu < 60) return Material.color(Material.LightGreen)
+                            if (telemetry.cpu < 80) return Material.color(Material.Orange)
+                            else return Material.color(Material.Red)
+                        }
+                    }
+
+                }
+                Entry{
+                    Layout.fillWidth: true
+                    name: "Program last Update:"
+                    value: telemetry.programLastUpdate
+                    alignValue: Text.AlignLeft
+                    isNA: telemetry.programLastUpdate === ""
                 }
             }
         }

@@ -7,9 +7,10 @@ from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from .controllers_manager import ControllersManager
+from .controllers import ControllersManager
+from .network import RobotNetwork
 from .robot import Robot
-from .robot_network import RobotNetwork
+from .telemetry import Telemetry
 
 
 class GuiApp(QGuiApplication):
@@ -22,7 +23,8 @@ class GuiApp(QGuiApplication):
         self.app_status.panelChanged.connect(self.aknowledge_panel_changed)
         self.controllersManager = ControllersManager()
         self.robot = Robot(self.controllersManager.keyboard_controller)
-        self.robot_network = RobotNetwork(self.robot, self.controllersManager)
+        self.telemetry = Telemetry()
+        self.robot_network = RobotNetwork(self.robot, self.controllersManager, self.telemetry)
 
         self.engine = QQmlApplicationEngine()
         self.ctx = self.engine.rootContext()
@@ -31,11 +33,12 @@ class GuiApp(QGuiApplication):
 
     def exec(self):
         self.controllersManager.init_pygame()
-        self.robot_network.start_udp_refresh()
         self.ctx.setContextProperty('app', self.app_status)
-        self.ctx.setContextProperty('controllers', self.controllersManager)
         self.ctx.setContextProperty('robot', self.robot)
+        self.ctx.setContextProperty('telemetry', self.telemetry)
+        self.ctx.setContextProperty('controllers', self.controllersManager)
         self.ctx.setContextProperty('network', self.robot_network)
+
         self.aknowledge_panel_changed(self.app_status.panel)
 
         self.engine.load(self.ui_path('main.qml'))
@@ -44,9 +47,10 @@ class GuiApp(QGuiApplication):
         # Delete the engine to avoid type errors when closing the program
         del self.engine
 
-        self.robot_network.stop_udp_refresh()
+        self.robot_network.mute_udp_refresh = True
         self.robot.enabled = False
         self.robot_network.send_udp(force_controller_neutral=True)
+        self.robot_network.close()
         self.controllersManager.quit_pygame()
         return r
 

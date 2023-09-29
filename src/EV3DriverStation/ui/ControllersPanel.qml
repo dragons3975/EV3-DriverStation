@@ -3,6 +3,8 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts
 import QtQuick.Controls.Material 2.15
 
+import "CustomUI/"
+
 Rectangle {
     width: 1000
     height: 300

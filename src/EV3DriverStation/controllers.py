@@ -13,6 +13,7 @@ class ControllersManager(QObject):
     pilot1ControllerIdChanged = Signal()
     pilot2ControllerIdChanged = Signal()
     namesChanged = Signal()
+    stateRefreshRateChanged = Signal()
     statesChanged = Signal()
 
     def __init__(self, list_refresh_rate=1000, state_refresh_rate=30):
@@ -67,6 +68,23 @@ class ControllersManager(QObject):
         if self._states is None:
             self._states = [s.as_dict() for s in self.get_pilot_controllers_states()]
         return self._states
+
+    @Property(bool, notify=statesChanged)
+    def isPilot1ControllerActive(self):
+        return not self._pilot1State.is_neutral()
+
+    @Property(bool, notify=statesChanged)
+    def isPilot2ControllerActive(self):
+        return not self._pilot2State.is_neutral()
+
+    @Property(int, notify=stateRefreshRateChanged)
+    def stateRefreshRate(self):
+        return self._state_refresh_rate
+
+    @stateRefreshRate.setter
+    def stateRefreshRate(self, value: int):
+        self._state_refresh_rate = int(value)
+        self.state_refresh_timer.setInterval(self._state_refresh_rate)
 
     def get_pilot_controllers_states(self) -> tuple[ControllerState, ControllerState]:
         return (self._pilot1State, self._pilot2State)
@@ -155,13 +173,18 @@ class ControllersManager(QObject):
         if p1 is None and p2 is None:
             return
 
+        p1LastState = self._pilot1State
+        p2LastState = self._pilot2State
+
         pygame.event.pump()
         if p1 is not None:
             self._pilot1State = self.pilot1Controller.get_state(pump_event=False)
         if p2 is not None:
             self._pilot2State = self.pilot2Controller.get_state(pump_event=False)
-        self._states = None
-        self.statesChanged.emit()
+
+        if self._pilot1State != p1LastState or self._pilot2State != p2LastState:
+            self._states = None
+            self.statesChanged.emit()
 
     @Slot(int, int)
     def set_pilot_controllerId(self, pilotId: int, controllerId: int):
@@ -219,14 +242,17 @@ class ControllerState(NamedTuple):
     Down: bool = False
 
     @property
-    def axis(self):
+    def axis(self) -> tuple[float, ...]:
         return self[:6]
 
     @property
-    def buttons(self):
+    def buttons(self) -> tuple[bool, ...]:
         return self[6:]
 
-    def as_dict(self):
+    def is_neutral(self) -> bool:
+        return self == ControllerState()
+
+    def as_dict(self) -> dict[str, float | bool]:
         return self._asdict()
 
 class Controller:
@@ -234,14 +260,14 @@ class Controller:
         self.joystick = joystick
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.joystick.get_name()
 
     @property
-    def guid(self):
+    def guid(self) -> str:
         return self.joystick.get_guid()
     
-    def get_state(self, pump_event=True):
+    def get_state(self, pump_event=True) -> ControllerState:
         if pump_event:
             pygame.event.pump()
 
@@ -329,14 +355,14 @@ class Keyboard(Controller):
         self.state = ControllerState()
 
     @property
-    def name(self):
+    def name(self) -> str:
         return "Keyboard"
 
     @property
-    def guid(self):
+    def guid(self) -> str:
         return "KEYBOARD"
     
-    def get_state(self, pump_event=True):        
+    def get_state(self, pump_event=True) -> ControllerState:
         return self.state
 
     def key_event(self, event: QKeyEvent):

@@ -75,7 +75,7 @@ Rectangle {
 
     Image {
         id: bumperImage
-        source: "bumper.svg"
+        source: "../assets/bumper.svg"
         height: 19
         fillMode: Image.PreserveAspectFit
         antialiasing: true
@@ -84,7 +84,7 @@ Rectangle {
 
     Image {
         id: triggerImage
-        source: "trigger.svg"
+        source: "../assets/trigger.svg"
         height: 25
         fillMode: Image.PreserveAspectFit
         antialiasing: true
@@ -97,7 +97,7 @@ Rectangle {
 
     Image {
         id: controllerImage
-        source: "xbox.svg"
+        source: "../assets/xbox.svg"
         anchors.left: parent.left
         anchors.leftMargin: 5
         anchors.verticalCenter: parent.verticalCenter

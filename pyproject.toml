@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "pygame", "PySide6", "pyinstaller"
+    "pygame", "PySide6", "pyinstaller", "icmplib", "fabric"
 ]
 dynamic = ["version"]
 
