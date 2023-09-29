@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from enum import Enum
 
@@ -178,10 +177,11 @@ class Telemetry(QObject):
         if data is None:
             data = {}
             self.set_telemetry_status(TelemetryStatus.UNAVAILABLE)
+        else:
+            self.set_telemetry_status(TelemetryStatus.CONNECTED)
         if data != self._telemetry_data:
             self._telemetry_data = data
             self.telemetryData_changed.emit()
-            self.set_telemetry_status(TelemetryStatus.CONNECTED)
 
     def add_telemetry_data(self, key, value):
         if key not in self._telemetry_data or self._telemetry_data[key] != value:

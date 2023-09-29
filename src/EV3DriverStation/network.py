@@ -460,11 +460,10 @@ class RobotNetwork(QObject):
                 data = f.read()
                 self.telemetry.set_telemetry_data(json.loads(data))
             except IOError:
-                self.telemetry.set_telemetry_data(None)
+                pass
             except:
                 print("An error occured when pulling telemetry from the robot.")
                 traceback.print_exc()
-                self.telemetry.set_telemetry_data(None)
 
     # --- IPs List --- #
     availableAddresses_changed = Signal()

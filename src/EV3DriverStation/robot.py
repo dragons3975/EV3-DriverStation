@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from enum import Enum
 
 from PySide6.QtCore import Property, QObject, Qt, QTimer, Signal, Slot
