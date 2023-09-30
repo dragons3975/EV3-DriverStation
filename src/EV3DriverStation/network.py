@@ -455,7 +455,7 @@ class RobotNetwork(QObject):
 
     def wait_and_pull_telemetry(self, time_s: int):
         if self._ssh is None:
-            time.sleep(time_s*1000)
+            time.sleep(time_s)
             return
 
         t0 = time.time()
@@ -475,7 +475,7 @@ class RobotNetwork(QObject):
                         traceback.print_exc()
 
             # Sleep for the remaining time or pull_telemetry_rate
-            time.sleep(min((time.time()-t0)*1000, self._pull_telemetry_rate))
+            time.sleep(min((time.time()-t0), self._pull_telemetry_rate/1000))
 
     # --- IPs List --- #
     availableAddresses_changed = Signal()
