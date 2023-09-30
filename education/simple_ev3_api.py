@@ -72,16 +72,16 @@ class RobotAPI:
 
     @property
     def positionMoteur1(self):
-        return self.telemetry._telemetryData['moteurL']
+        return self.telemetry._telemetry_data['moteurL']
 
     @property
     def positionMoteur2(self):
-        return self.telemetry._telemetryData['moteurR']
+        return self.telemetry._telemetry_data['moteurR']
 
     @property
     def capteurCouleur(self):
-        return self.telemetry._telemetryData['color']
+        return self.telemetry._telemetry_data['color']
 
     @property
     def capteurTactile(self):
-        return self.telemetry._telemetryData['touch'] == 1
+        return self.telemetry._telemetry_data['touch'] == 1
