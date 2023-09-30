@@ -242,21 +242,51 @@ Rectangle {
 
                     Entry {
                         width: parent.width / 2
-                        name: "Voltage:"
-                        value: telemetry.voltage.toFixed(2)
+                        name: "EV3 Voltage:"
+                        value: telemetry.ev3Voltage.toFixed(2)
                         suffix: " V"
-                        isNA: telemetry.voltage === 0
+                        isNA: telemetry.ev3Voltage === 0
                         color: {
-                            if (telemetry.voltage > 7) return Material.color(Material.LightGreen)
-                            else if (telemetry.voltage > 6) return Material.color(Material.Orange)
+                            if (telemetry.ev3Voltage > 7) return Material.color(Material.LightGreen)
+                            else if (telemetry.ev3Voltage > 6.7) return Material.color(Material.Orange)
                             else return Material.color(Material.Red)
                         }
+                        alignValue: Text.AlignLeft
+                    }
+
+                    Entry {
+                        width: parent.width / 2
+                        name: "Auxilary Voltage:"
+                        value: telemetry.auxVoltage.toFixed(2)
+                        suffix: " V"
+                        isNA: telemetry.auxVoltage === 0
+                        color: {
+                            if (telemetry.auxVoltage > 7) return Material.color(Material.LightGreen)
+                            else if (telemetry.auxVoltage > 6) return Material.color(Material.Orange)
+                            else return Material.color(Material.Red)
+                        }
+                        alignValue: Text.AlignLeft
+                    }
+                }
+
+                Row {
+                    Layout.fillWidth: true
+
+                    Entry {
+                        property bool ampere: telemetry.ev3Current > 1000
+                        width: parent.width / 2
+                        name: "EV3 Current:"
+                        value: ampere ? (telemetry.ev3Current/1000).toFixed(2) : telemetry.ev3Current.toFixed(0)
+                        suffix: ampere ? " A" : " mA"
+                        isNA: telemetry.ev3Current === 0
+
+                        alignValue: Text.AlignLeft
                     }
                     
                     Entry {
                         width: parent.width / 2
                         name: "CPU Load:"
-                        value: telemetry.cpu
+                        value: (telemetry.cpu*100).toFixed(0)
                         suffix: "%"
                         isNA: telemetry.cpu === 0
                         color: {
@@ -264,6 +294,7 @@ Rectangle {
                             if (telemetry.cpu < 80) return Material.color(Material.Orange)
                             else return Material.color(Material.Red)
                         }
+                        alignValue: Text.AlignLeft
                     }
 
                 }

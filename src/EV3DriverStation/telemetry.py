@@ -8,12 +8,16 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 
 class Telemetry(QObject):
-    def __init__(self, network_tables_refresh_rate=450):
+    def __init__(self):
         super().__init__()
         self._program_last_update = ''
-        self._voltage = 0
-        self._cpu = 0
+        self._ev3_voltage = 0
+        self._aux_voltage = 0
+        self._ev3_current = 0
+        self._cpu_load = 0
+
         self._telemetry_data = {}
+        self._freeze_telemetry = False
         self._telemetry_status = TelemetryStatus.UNAVAILABLE
 
         # self._network_tables = None
@@ -25,16 +29,12 @@ class Telemetry(QObject):
     @Slot()
     def clear_and_disconnect(self):
         self._program_last_update = ''
-        self._voltage = 0
-        self._cpu = 0
-        self._telemetry_data = {}
-        self._telemetry_status = TelemetryStatus.UNAVAILABLE
-
         self.programLastUpdate_changed.emit(self._program_last_update)
-        self.voltage_changed.emit(self._voltage)
-        self.cpu_changed.emit(self._cpu)
-        self.telemetryData_changed.emit()
-        self.telemetryStatus_changed.emit(self._telemetry_status)
+
+        self.set_ev3_voltage(0)
+        self.set_ev3_current(0)
+        self.set_cpu_load(0)
+        self.set_telemetry_data(None)
 
         # self.disconnect_network_tables()
 
@@ -57,9 +57,13 @@ class Telemetry(QObject):
                     date = None
                 self.set_program_date(date)
             elif line_code == 'V':
-                self.set_robot_voltage(float(line_content)/1000)
+                self.set_ev3_voltage(float(line_content)/1000)
+            elif line_code == 'A':
+                self.set_aux_voltage(float(line_content)/1000)
             elif line_code == 'C':
-                self.set_cpu_usage(float(line_content))
+                self.set_ev3_current(float(line_content))
+            elif line_code == 'L':
+                self.set_cpu_load(float(line_content))
 
     #====================#
     #== Network Tables ==#
@@ -134,27 +138,49 @@ class Telemetry(QObject):
             self._program_last_update = date 
             self.programLastUpdate_changed.emit(self._program_last_update)
 
-    # --- Robot voltage --- #
-    voltage_changed = Signal(float)
-    @Property(float, notify=voltage_changed)
-    def voltage(self) -> float:
-        return self._voltage
+    # --- EV3 voltage --- #
+    ev3Voltage_changed = Signal(float)
+    @Property(float, notify=ev3Voltage_changed)
+    def ev3Voltage(self) -> float:
+        return self._ev3_voltage
 
-    def set_robot_voltage(self, voltage: float):
-        if voltage != self._voltage:
-            self._voltage = voltage
-            self.voltage_changed.emit(self._voltage)
+    def set_ev3_voltage(self, voltage: float):
+        if voltage != self._ev3_voltage:
+            self._ev3_voltage = voltage
+            self.ev3Voltage_changed.emit(self._ev3_voltage)
+
+    # --- Aux voltage --- #
+    auxVoltage_changed = Signal(float)
+    @Property(float, notify=auxVoltage_changed)
+    def auxVoltage(self) -> float:
+        return self._aux_voltage
+
+    def set_aux_voltage(self, voltage: float):
+        if voltage != self._aux_voltage:
+            self._aux_voltage = voltage
+            self.auxVoltage_changed.emit(self._aux_voltage)
+
+    # --- EV3 current --- #
+    ev3Current_changed = Signal(float)
+    @Property(float, notify=ev3Current_changed)
+    def ev3Current(self) -> float:
+        return self._ev3_current
+
+    def set_ev3_current(self, current: float):
+        if current != self._ev3_current:
+            self._ev3_current = current
+            self.ev3Current_changed.emit(self._ev3_current)
 
     # --- CPU usage --- #
     cpu_changed = Signal(float)
     @Property(float, notify=cpu_changed)
     def cpu(self) -> float:
-        return self._cpu
+        return self._cpu_load
 
-    def set_cpu_usage(self, cpu: float):
-        if cpu != self._cpu:
-            self._cpu = cpu
-            self.cpu_changed.emit(self._cpu)
+    def set_cpu_load(self, cpu: float):
+        if cpu != self._cpu_load:
+            self._cpu_load = cpu
+            self.cpu_changed.emit(self._cpu_load)
 
     # --- Telemetry status --- #
     telemetryStatus_changed = Signal(str)
@@ -167,6 +193,18 @@ class Telemetry(QObject):
             self._telemetry_status = status
             self.telemetryStatus_changed.emit(status)
 
+    # --- Freeze telemetry --- #
+    freezeTelemetry_changed = Signal(bool)
+    @Property(bool, notify=freezeTelemetry_changed)
+    def freezeTelemetry(self) -> bool:
+        return self._freeze_telemetry
+
+    @freezeTelemetry.setter
+    def freezeTelemetry(self, value: bool):
+        if value != self._freeze_telemetry:
+            self._freeze_telemetry = value
+            self.freezeTelemetry_changed.emit(self._freeze_telemetry)
+    
     # --- Telemetry data --- #
     telemetryData_changed = Signal()
     @Property(list, notify=telemetryData_changed)

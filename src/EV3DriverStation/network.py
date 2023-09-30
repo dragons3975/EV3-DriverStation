@@ -24,7 +24,9 @@ from .telemetry import Telemetry
 
 
 class RobotNetwork(QObject):
-    def __init__(self, robot: Robot, controllers: ControllersManager, telemetry: Telemetry, max_refresh_rate:int=30, address: str | None = None):
+    def __init__(self, robot: Robot, controllers: ControllersManager, telemetry: Telemetry, 
+                 address: str | None = None,
+                 max_refresh_rate:int=30, pull_telemetry_rate:int=500, ):
         super().__init__()
         self.robot = robot
         self.controllers = controllers
@@ -42,6 +44,7 @@ class RobotNetwork(QObject):
         # SSH Communication
         self._ssh_thread: threading.Thread = None
         self._ssh: SSHConnection = None
+        self._pull_telemetry_rate = pull_telemetry_rate
         
         self.connectionFailed.connect(self.disconnectRobot)
         self.connectionLost.connect(self.disconnectRobot)
@@ -140,6 +143,7 @@ class RobotNetwork(QObject):
         self._set_connection_status(ConnectionStatus.DISCONNECTED)
         self._set_signalStrength(0, 0)
         self.telemetry.clear_and_disconnect()
+        self.robot.enabled = False
         self.disconnected.emit()
 
     def close(self):
@@ -203,10 +207,7 @@ class RobotNetwork(QObject):
                     break
                 
                 # Pull telemetry for 2.5 seconds
-                time.sleep(.5)
-                for _ in range(4):
-                    self.pull_telemetry()
-                    time.sleep(.5)
+                self.wait_and_pull_telemetry(2.5)
 
                 # Refresh ping and signal strength
                 if not self.refresh_signal_strength():
@@ -214,9 +215,7 @@ class RobotNetwork(QObject):
                     break
 
                 # Pull telemetry for 1 seconds
-                time.sleep(.5)
-                self.pull_telemetry()
-                time.sleep(.5)
+                self.wait_and_pull_telemetry(1)
 
                 # Refresh robot status
                 lostConnexionReason = self.refresh_ssh_status()
@@ -224,9 +223,7 @@ class RobotNetwork(QObject):
                     break
                 
                 # Pull telemetry for 1 seconds
-                time.sleep(.5)
-                self.pull_telemetry()
-                time.sleep(.5)
+                self.wait_and_pull_telemetry(1)
 
             self.connectionLost.emit(self._ssh.host, lostConnexionReason)
 
@@ -363,8 +360,9 @@ class RobotNetwork(QObject):
             return "SSH connection with the robot has been lost."
 
         try:
-            status = self._ssh.run('./DS.sh', hide=True, warn=True, timeout=3)
+            status = self._ssh.run('./DS.sh', hide=True, warn=True, timeout=5)
         except CommandTimedOut:
+            print("Timeout when running the SSH script.")
             return False
         if status.stderr:
             print("Error when running the SSH script:")
@@ -455,21 +453,29 @@ class RobotNetwork(QObject):
             self._signal_strength = strength
             self.signalStrength_changed.emit(strength)
 
-    def pull_telemetry(self):
+    def wait_and_pull_telemetry(self, time_s: int):
         if self._ssh is None:
+            time.sleep(time_s*1000)
             return
-        with SpooledTemporaryFile() as f:
-            try:
-                self._ssh.get('/run/user/1000/telemetry.json', f)
-                f.seek(0)
-                data = f.read()
-                if data:
-                    self.telemetry.set_telemetry_data(json.loads(data))
-            except IOError:
-                pass
-            except:
-                print("An error occured when pulling telemetry from the robot.")
-                traceback.print_exc()
+
+        t0 = time.time()
+        while time.time() - t0 < time_s:
+            if not self.telemetry.freezeTelemetry:
+                with SpooledTemporaryFile() as f:
+                    try:
+                        self._ssh.get('/run/user/1000/telemetry.json', f)
+                        f.seek(0)
+                        data = f.read()
+                        if data:
+                            self.telemetry.set_telemetry_data(json.loads(data))
+                    except IOError:
+                        pass
+                    except:
+                        print("An error occured when pulling telemetry from the robot.")
+                        traceback.print_exc()
+
+            # Sleep for the remaining time or pull_telemetry_rate
+            time.sleep(min((time.time()-t0)*1000, self._pull_telemetry_rate))
 
     # --- IPs List --- #
     availableAddresses_changed = Signal()
@@ -513,6 +519,21 @@ class RobotNetwork(QObject):
             self._max_udp_refresh_timer.start(t)
 
         self.maxUdpRefreshRate_changed.emit(t)
+
+    # --- Pull Telemetry Rate --- #
+    pullTelemetryRate_changed = Signal(int)
+    @Property(int, notify=pullTelemetryRate_changed)
+    def pullTelemetryRate(self) -> int:
+        return self._pull_telemetry_rate
+
+    @pullTelemetryRate.setter
+    def pullTelemetryRate(self, value: int):
+        t = int(round(value))
+        if t == self._pull_telemetry_rate:
+            return
+
+        self._pull_telemetry_rate = t
+        self.pullTelemetryRate_changed.emit(t)
 
     # --- Mute UDP Refresh --- #
     muteUdpRefresh_changed = Signal(bool)
