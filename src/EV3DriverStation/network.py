@@ -80,7 +80,7 @@ class RobotNetwork(QObject):
         host = self.robot_host
         if host == '':
             return
-
+        
         mode = 0 if not self.robot.enabled else {
             RobotMode.AUTO: 1,
             RobotMode.TELEOP: 2,
@@ -195,11 +195,11 @@ class RobotNetwork(QObject):
                 return
             self._ssh = ssh
 
-            self.refresh_ssh_status()
+            lostConnexionReason = self.refresh_ssh_status()
 
-            while True:
+            while not lostConnexionReason:
                 if not self.refresh_signal_strength():
-                    self.connectionLost.emit(self._ssh.host, "Robot didn't respond to ping in time.")
+                    lostConnexionReason = "Robot didn't respond to ping in time."
                     break
                 
                 # Pull telemetry for 2.5 seconds
@@ -210,7 +210,7 @@ class RobotNetwork(QObject):
 
                 # Refresh ping and signal strength
                 if not self.refresh_signal_strength():
-                    self.connectionLost.emit(self._ssh.host, "Robot didn't respond to ping in time.")
+                    lostConnexionReason = "Robot didn't respond to ping in time."
                     break
 
                 # Pull telemetry for 1 seconds
@@ -219,14 +219,16 @@ class RobotNetwork(QObject):
                 time.sleep(.5)
 
                 # Refresh robot status
-                if not self.refresh_ssh_status():
-                    self.connectionLost.emit(self._ssh.host, 'SSH connection with the robot has been lost.')
+                lostConnexionReason = self.refresh_ssh_status()
+                if lostConnexionReason:
                     break
                 
                 # Pull telemetry for 1 seconds
                 time.sleep(.5)
                 self.pull_telemetry()
                 time.sleep(.5)
+
+            self.connectionLost.emit(self._ssh.host, lostConnexionReason)
 
         except SystemError:
             pass
@@ -262,11 +264,12 @@ class RobotNetwork(QObject):
         # === Initiate SSH Connection ===
         self._set_connection_status(ConnectionStatus.AUTH)
         try:
-            ssh = SSHConnection(f"{username}@{host}:{port}", connect_kwargs={"password": password}, connect_timeout=3)
+            ssh = SSHConnection(f"{username}@{host}:{port}", connect_timeout=30,
+                                connect_kwargs=dict(password= password))
             ssh.open()
         except TimeoutError:
             self.connectionFailed.emit(ConnectionFailedReason.UNREACHABLE, 
-                                       f'Invalid robot address: <i>{host}</i>.')
+                                       f'Invalid robot address: <i>{host}</i>. (Or robot is too busy)')
             return None
         except NoValidConnectionsError:
             self.connectionFailed.emit(ConnectionFailedReason.UNREACHABLE, 
@@ -357,18 +360,20 @@ class RobotNetwork(QObject):
 
     def refresh_ssh_status(self) -> bool:
         if not self._ssh.is_connected:
-            return False
+            return "SSH connection with the robot has been lost."
 
         try:
-            status = self._ssh.run('./DS.sh', hide=True, warn=True, timeout=2)
+            status = self._ssh.run('./DS.sh', hide=True, warn=True, timeout=3)
         except CommandTimedOut:
             return False
         if status.stderr:
-            return False
+            print("Error when running the SSH script:")
+            print(status.stderr)
+            return "SSH script returned an error."
 
         self.telemetry.refresh_robot_status(status.stdout)
 
-        return True
+        return False
 
     def refresh_signal_strength(self) -> bool:
         strength, avg_ping = self.get_signal_strength(self._ssh.host)
@@ -458,7 +463,8 @@ class RobotNetwork(QObject):
                 self._ssh.get('/run/user/1000/telemetry.json', f)
                 f.seek(0)
                 data = f.read()
-                self.telemetry.set_telemetry_data(json.loads(data))
+                if data:
+                    self.telemetry.set_telemetry_data(json.loads(data))
             except IOError:
                 pass
             except:

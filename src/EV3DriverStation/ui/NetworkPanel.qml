@@ -51,8 +51,8 @@ Rectangle {
 
         title: qsTr("Connection failed") + ": " + reason
 
-        Component.onCompleted: network.connectionFailed.connect(setAndOpen)
-        function setAndOpen(reason, info){
+        Component.onCompleted: network.connectionFailed.connect(setAndOpenFailed)
+        function setAndOpenFailed(reason, info){
             reason = reason
             informativeText = info
             connectionFailedDialog.open()
@@ -62,12 +62,11 @@ Rectangle {
     MessageDialog {
         id: connectionLostDialog
         title: qsTr("Connection Lost")
-        informativeText: qsTr("The connection to the robot was lost.")
 
-        Component.onCompleted: network.connectionLost.connect(setAndOpen)
-        function setAndOpen(ip, info){
-            detailedText = info
-            connectionFailedDialog.open()
+        Component.onCompleted: network.connectionLost.connect(setAndOpenLost)
+        function setAndOpenLost(ip, info){
+            informativeText = info
+            connectionLostDialog.open()
         }
     }
 
