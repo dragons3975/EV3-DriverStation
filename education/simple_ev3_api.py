@@ -1,3 +1,4 @@
+import traceback
 from time import sleep, time
 
 from EV3DriverStation import ControllersManager, ControllerState, Robot, RobotMode, RobotNetwork, Telemetry
@@ -28,7 +29,7 @@ class RobotAPI:
 
     def disconnect(self):
         self.send_neutral()
-        self.network.disconnect()
+        self.network.disconnectRobot()
 
     def send_during(self, dt: float, repeat_ms: int = None):
         try:
@@ -37,12 +38,11 @@ class RobotAPI:
                 sleep(dt)
             else:
                 t0 = time()
-                while t0 + dt < time():
-                    print("send")
+                while t0 + dt > time():
                     self.network.send_udp()
-                    sleep(min(repeat_ms / 1000, time() - (t0 + dt)))
+                    sleep(min(repeat_ms / 1000, (t0 + dt)-time()))
         except:
-            pass
+            traceback.print_exc()
         self.send_neutral()
 
     def avance(self, temps: float, puissance:float=1):
