@@ -216,12 +216,15 @@ Rectangle {
         ColumnLayout{
             Layout.fillHeight: true
 
-            Label {
-                Layout.fillWidth: true
+            Header {
                 text: "Network Settings"
-                leftPadding: 30
-                font.bold: true
-                font.pixelSize: 17
+
+                HeaderButton{
+                    visible: network.connectionStatus === "Connected"
+                    source: network.muteUdpRefresh ? "assets/play.svg" : "assets/pause.svg"
+                    tooltip: network.muteUdpRefresh ? "Resume UDP" : "Mute UDP"
+                    onClicked: network.muteUdpRefresh = !network.muteUdpRefresh
+                }
             }
 
             Item {
@@ -256,8 +259,98 @@ Rectangle {
                         isNA: network.udpAvgDt===0
                         suffix: " ms"
                     }
+
+                    Item {
+                        Layout.fillWidth: true
+                        height: 10
+                    }
+
+                    NetworkOption {
+                        Layout.fillWidth: true
+                        name: "Controllers refresh rate (ms)"
+                        value: controllers.stateRefreshRate
+                        minValue: 5 
+                        maxValue: 100
+                        stepSize: 5
+                        onValueChanged: controllers.stateRefreshRate = value
+                    }
+
+                    NetworkOption {
+                        name: "UDP max refresh rate (ms)"
+                        value: network.maxUdpRefreshRate
+                        minValue: 5 
+                        maxValue: 100
+                        stepSize: 5
+                        onValueChanged: network.maxUdpRefreshRate = value
+                    }
+
+                    NetworkOption {
+                        name: "Telemetry pull rate (ms)"
+                        value: network.pullTelemetryRate
+                        minValue: 50 
+                        maxValue: 1000
+                        stepSize: 100
+                        onValueChanged: network.pullTelemetryRate = value
+                    }
+
                 }
             }
+        }
+    }
+
+    component NetworkOption: Item{
+        id: networkOptionRoot
+        property alias name: label.text
+        property double value: 30
+
+        property alias minValue: spinbox.from
+        property alias maxValue: spinbox.to
+        property alias stepSize: spinbox.stepSize
+
+        width: parent.width
+        height: 30
+
+        Label {
+            id: label
+            anchors.left: parent.left
+            anchors.leftMargin: 10
+            anchors.right: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            text: "Telemetry pull rate (ms)"
+        }
+        Item{
+            anchors.right: parent.right
+            anchors.left: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+
+            SpinBox {
+                id : spinbox
+                height: 30
+                anchors.centerIn: parent
+
+                stepSize: 10
+                validator: DoubleValidator {
+                    bottom: Math.min(spinbox.from, spinbox.to)
+                    top:  Math.max(spinbox.from, spinbox.to)
+                }
+
+                from: 0
+                to: 100
+                value : networkOptionRoot.value
+                onValueModified: {
+                    networkOptionRoot.value = value
+                }
+                editable: true
+
+                font.pixelSize: 15
+                topPadding: 5
+                bottomPadding: 3
+                leftPadding: 0
+                rightPadding: 0
+            }
+            
         }
     }
 }

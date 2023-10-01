@@ -197,12 +197,14 @@ Rectangle {
 
             ColumnLayout {
                 anchors.fill: parent
-                Label {
-                    Layout.fillWidth: true
+                Header {
                     text: "Telemetry"
-                    leftPadding: 30
-                    font.bold: true
-                    font.pixelSize: 17
+
+                    HeaderButton{
+                        source: telemetry.freezeTelemetry ? "assets/play.svg" : "assets/pause.svg"
+                        tooltip: telemetry.freezeTelemetry ? "Resume Telemetry" : "Pause Telemetry"
+                        onClicked: telemetry.freezeTelemetry = !telemetry.freezeTelemetry
+                    }
                 }
 
                 Item {
@@ -290,8 +292,8 @@ Rectangle {
                         suffix: "%"
                         isNA: telemetry.cpu === 0
                         color: {
-                            if (telemetry.cpu < 60) return Material.color(Material.LightGreen)
-                            if (telemetry.cpu < 80) return Material.color(Material.Orange)
+                            if (telemetry.cpu < .75) return Material.color(Material.LightGreen)
+                            if (telemetry.cpu < 1) return Material.color(Material.Orange)
                             else return Material.color(Material.Red)
                         }
                         alignValue: Text.AlignLeft

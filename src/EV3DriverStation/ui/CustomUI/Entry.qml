@@ -11,9 +11,12 @@ Item {
     property string prefix: ""
     property string suffix: ""
     property bool isNA: false
+    property bool editable: false
 
     property color color: Material.foreground
     property color disabledColor: Material.color(Material.Grey, Material.Shade500)
+
+    signal clicked
 
     width: parent.width
     height: 24

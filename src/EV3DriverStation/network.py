@@ -60,7 +60,7 @@ class RobotNetwork(QObject):
         self._udp_avg_dt = 0
         self._udp_sent_count_timer = QTimer(self)
         self._udp_sent_count_timer.timeout.connect(self.refresh_udp_avg_dt)
-        self._udp_sent_count_timer.start(500)
+        self._udp_sent_count_timer.start(1000)
 
         self._max_udp_refresh_timer = QTimer(self)
         self._max_udp_refresh_timer.setSingleShot(True)
@@ -556,7 +556,8 @@ class RobotNetwork(QObject):
 
     @Slot()
     def refresh_udp_avg_dt(self) -> None:
-        self._udp_avg_dt = 0 if self._udp_sent_count == 0 else 500 / self._udp_sent_count
+        t = self._udp_sent_count_timer.interval()
+        self._udp_avg_dt = 0 if self._udp_sent_count == 0 else t / self._udp_sent_count
         self.udpAvgDt_changed.emit(self._udp_avg_dt)
         self._udp_sent_count = 0
 
