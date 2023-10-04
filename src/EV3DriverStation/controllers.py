@@ -10,13 +10,7 @@ from PySide6.QtGui import QKeyEvent
 
 
 class ControllersManager(QObject):
-    pilot1ControllerIdChanged = Signal()
-    pilot2ControllerIdChanged = Signal()
-    namesChanged = Signal()
-    stateRefreshRateChanged = Signal()
-    statesChanged = Signal()
-
-    def __init__(self, list_refresh_rate=1000, state_refresh_rate=30):
+    def __init__(self, list_refresh_rate=1000):
         super().__init__()
         self.keyboard_controller = Keyboard()
         self.controllers = []
@@ -28,80 +22,24 @@ class ControllersManager(QObject):
         self.list_refresh_timer = QTimer(self)
         self.list_refresh_timer.timeout.connect(self.refresh_controllers_list)
         self.state_refresh_timer = QTimer(self)
+        self.state_refresh_timer.setInterval(10)
         self.state_refresh_timer.timeout.connect(self.refresh_pilot_controllers_state)
 
         self._list_refresh_rate = list_refresh_rate
-        self._state_refresh_rate = state_refresh_rate
         self._states = None
 
-    @property
-    def pilot1Controller(self) -> Controller | None:
-        return self.get_controller_by_id(self._pilot1ControllerId)
+    def init_pygame(self):
+        pygame.init()
+        pygame.joystick.init()
+        self.list_refresh_timer.start(self._list_refresh_rate)
+        self.state_refresh_timer.start()
 
-    @property
-    def pilot2Controller(self) -> Controller | None:
-        return self.get_controller_by_id(self._pilot2ControllerId)
+    def quit_pygame(self):
+        pygame.quit()
 
-    @Property(int, notify=pilot1ControllerIdChanged)
-    def pilot1ControllerId(self) -> int:
-        return self._pilot1ControllerId if self._pilot1ControllerId is not None else -1
-
-    @pilot1ControllerId.setter
-    def pilot1ControllerId(self, controllerId: int):
-        self.update_pilot_controller(0, controllerId)
-    
-
-    @Property(int, notify=pilot2ControllerIdChanged)
-    def pilot2ControllerId(self)-> int:
-        return self._pilot2ControllerId if self._pilot2ControllerId is not None else -1
-
-    @pilot2ControllerId.setter
-    def pilot2ControllerId(self, controllerId: int):
-        self.update_pilot_controller(1, controllerId)
-
-    @Property(list, notify=namesChanged)
-    def names(self) ->list[str]:
-        return [j.name for j in self.controllers]
-
-    @Property(list, notify=statesChanged)
-    def states(self):
-        if self._states is None:
-            self._states = [s.as_dict() for s in self.get_pilot_controllers_states()]
-        return self._states
-
-    @Property(bool, notify=statesChanged)
-    def isPilot1ControllerActive(self):
-        return not self._pilot1State.is_neutral()
-
-    @Property(bool, notify=statesChanged)
-    def isPilot2ControllerActive(self):
-        return not self._pilot2State.is_neutral()
-
-    @Property(int, notify=stateRefreshRateChanged)
-    def stateRefreshRate(self):
-        return self._state_refresh_rate
-
-    @stateRefreshRate.setter
-    def stateRefreshRate(self, value: int):
-        self._state_refresh_rate = int(value)
-        self.state_refresh_timer.setInterval(self._state_refresh_rate)
-
-    def get_pilot_controllers_states(self) -> tuple[ControllerState, ControllerState]:
-        return (self._pilot1State, self._pilot2State)
-
-    def get_pilot_controllers_guid(self) -> list[str, str]:
-        p1, p2 = self.pilot1Controller, self.pilot2Controller
-        p1_guid = None if p1 is None else p1.guid
-        p2_guid = None if p2 is None else p2.guid
-        return [p1_guid, p2_guid]
-
-    def get_controller_by_id(self, controllerId: int | None) -> Controller | None:
-        if controllerId is None or  not (0 <= controllerId <= len(self.controllers)):
-            return None
-        if controllerId == 0:
-            return self.keyboard_controller
-        return self.controllers[controllerId - 1]
-
+    #===================#
+    #== Refresh Slots ==#
+    #===================#
     @Slot()
     def refresh_controllers_list(self):
         # Remember previous controllers guid
@@ -158,6 +96,8 @@ class ControllersManager(QObject):
         p1_id = guid2index(pilotsGuid[0])
         p2_id = guid2index(pilotsGuid[1])
 
+        self.list_refresh_timer.start()
+
         # Update QML
         if self._pilot1ControllerId != p1_id:
             self._pilot1ControllerId = p1_id
@@ -185,6 +125,8 @@ class ControllersManager(QObject):
         if self._pilot1State != p1LastState or self._pilot2State != p2LastState:
             self._states = None
             self.statesChanged.emit()
+        
+        self.state_refresh_timer.start()
 
     @Slot(int, int)
     def set_pilot_controllerId(self, pilotId: int, controllerId: int):
@@ -208,14 +150,80 @@ class ControllersManager(QObject):
         if p2 != self._pilot2ControllerId:
             self.pilot2ControllerIdChanged.emit()
 
-    def init_pygame(self):
-        pygame.init()
-        pygame.joystick.init()
-        self.list_refresh_timer.start(self._list_refresh_rate)
-        self.state_refresh_timer.start(self._state_refresh_rate)
+    #===========================#
+    #== Controllers Accessors ==#
+    #===========================#
+    @property
+    def pilot1Controller(self) -> Controller | None:
+        return self.get_controller_by_id(self._pilot1ControllerId)
 
-    def quit_pygame(self):
-        pygame.quit()
+    @property
+    def pilot2Controller(self) -> Controller | None:
+        return self.get_controller_by_id(self._pilot2ControllerId)
+
+    def get_pilot_controllers_states(self, refresh=True) -> tuple[ControllerState, ControllerState]:
+        if refresh:
+            self.refresh_pilot_controllers_state()
+        return (self._pilot1State, self._pilot2State)
+
+    def get_pilot_controllers_guid(self) -> list[str, str]:
+        p1, p2 = self.pilot1Controller, self.pilot2Controller
+        p1_guid = None if p1 is None else p1.guid
+        p2_guid = None if p2 is None else p2.guid
+        return [p1_guid, p2_guid]
+
+    def get_controller_by_id(self, controllerId: int | None) -> Controller | None:
+        if controllerId is None or  not (0 <= controllerId <= len(self.controllers)):
+            return None
+        if controllerId == 0:
+            return self.keyboard_controller
+        return self.controllers[controllerId - 1]
+
+    #====================#
+    #== QML PROPERTIES ==#
+    #====================#
+    # --- Pilot 1 controller --- #
+    pilot1ControllerIdChanged = Signal()
+    @Property(int, notify=pilot1ControllerIdChanged)
+    def pilot1ControllerId(self) -> int:
+        return self._pilot1ControllerId if self._pilot1ControllerId is not None else -1
+
+    @pilot1ControllerId.setter
+    def pilot1ControllerId(self, controllerId: int):
+        self.update_pilot_controller(0, controllerId)
+    
+
+    # --- Pilot 2 controller --- #
+    pilot2ControllerIdChanged = Signal()
+    @Property(int, notify=pilot2ControllerIdChanged)
+    def pilot2ControllerId(self)-> int:
+        return self._pilot2ControllerId if self._pilot2ControllerId is not None else -1
+
+    @pilot2ControllerId.setter
+    def pilot2ControllerId(self, controllerId: int):
+        self.update_pilot_controller(1, controllerId)
+
+    # --- Controllers names --- #
+    namesChanged = Signal()
+    @Property(list, notify=namesChanged)
+    def names(self) ->list[str]:
+        return [j.name for j in self.controllers]
+
+    # --- Controllers states --- #
+    statesChanged = Signal()
+    @Property(list, notify=statesChanged)
+    def states(self):
+        if self._states is None:
+            self._states = [s.as_dict() for s in self.get_pilot_controllers_states()]
+        return self._states
+
+    @Property(bool, notify=statesChanged)
+    def isPilot1ControllerActive(self):
+        return not self._pilot1State.is_neutral()
+
+    @Property(bool, notify=statesChanged)
+    def isPilot2ControllerActive(self):
+        return not self._pilot2State.is_neutral()
 
 
 class ControllerState(NamedTuple):
@@ -251,6 +259,10 @@ class ControllerState(NamedTuple):
 
     def is_neutral(self) -> bool:
         return self == ControllerState()
+
+    def is_same(self, other: ControllerState, axis_tolerance=.05) -> bool:
+        return  self.buttons == other.buttons and \
+                all(abs(a - b) <= axis_tolerance for a, b in zip(self.axis, other.axis, strict=True))
 
     def as_dict(self) -> dict[str, float | bool]:
         return self._asdict()

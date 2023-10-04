@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Controls.Material 2.15
 
 Rectangle {
-    width: 170
+    width: 150
     height: 300
 
     color: Material.backgroundColor

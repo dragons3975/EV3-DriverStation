@@ -32,7 +32,7 @@ ApplicationWindow  {
         anchors.top: parent.top;
         anchors.bottom: parent.bottom;
         anchors.margins: 10;
-        width: 200
+        width: 170
     }
 
 

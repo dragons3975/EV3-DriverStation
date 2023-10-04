@@ -11,6 +11,7 @@ import traceback
 from enum import Enum
 from os import path
 from tempfile import SpooledTemporaryFile
+from typing import NamedTuple
 
 from fabric import Connection as SSHConnection
 from icmplib import ping
@@ -19,14 +20,17 @@ from paramiko.ssh_exception import AuthenticationException, NoValidConnectionsEr
 from PySide6.QtCore import Property, QObject, QSettings, QTimer, Signal, Slot
 
 from .controllers import ControllersManager, ControllerState
-from .robot import Robot, RobotMode
+from .robot import ProgramStatus, Robot, RobotMode, RobotStatus
 from .telemetry import Telemetry
 
+WINDOWS_LINE_ENDING = b'\r\n'
+UNIX_LINE_ENDING = b'\n'
+LOCK_PATH = "robot.lock"
+SCRIPT_CWD = "/run/user/1000/"
 
 class RobotNetwork(QObject):
     def __init__(self, robot: Robot, controllers: ControllersManager, telemetry: Telemetry, 
-                 address: str | None = None,
-                 max_refresh_rate:int=30, pull_telemetry_rate:int=500, ):
+                 address: str | None = None, pull_telemetry_rate: int = 500):
         super().__init__()
         self.robot = robot
         self.controllers = controllers
@@ -37,7 +41,8 @@ class RobotNetwork(QObject):
         self._connection_status = ConnectionStatus.DISCONNECTED
         self._signal_strength = 0
         self._ping = 0
-        self._available_addresses = [_ for _ in QSettings('EV3DriverStation').value('availableAddresses', []) if _ != '']
+        self._available_addresses = [_ for _ in QSettings('EV3DriverStation').value('availableAddresses', []) 
+                                     if _ != '']
         if len(self._available_addresses) == 0:
             self.addAddress('localhost')
 
@@ -45,9 +50,11 @@ class RobotNetwork(QObject):
         self._ssh_thread: threading.Thread = None
         self._ssh: SSHConnection = None
         self._pull_telemetry_rate = pull_telemetry_rate
+        self._request_program_date = threading.Event()
         
         self.connectionFailed.connect(self.disconnectRobot)
         self.connectionLost.connect(self.disconnectRobot)
+        self.robot.programStarting.connect(self._request_program_date.set)
 
         # self.connectionSucceed.connect(self.telemetry.connect_network_tables)
         # self.disconnected.connect(self.telemetry.clear_and_disconnect)
@@ -56,20 +63,22 @@ class RobotNetwork(QObject):
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._mute_udp_refresh = False
 
-        self._udp_sent_count = 0
+        self._last_udp_t = None
         self._udp_avg_dt = 0
-        self._udp_sent_count_timer = QTimer(self)
-        self._udp_sent_count_timer.timeout.connect(self.refresh_udp_avg_dt)
-        self._udp_sent_count_timer.start(1000)
 
+        self._min_udp_refresh_timer = QTimer(self)
+        self._min_udp_refresh_timer.setSingleShot(True)
         self._max_udp_refresh_timer = QTimer(self)
         self._max_udp_refresh_timer.setSingleShot(True)
-        self._max_udp_refresh_rate = 0
-
-        controllers.statesChanged.connect(self.udp_refresh)
+        self._min_udp_refresh_timer.timeout.connect(self.udp_refresh)
         self._max_udp_refresh_timer.timeout.connect(self.udp_refresh)
+        self._last_udp_state: UdpState = None    
 
-        self.maxUdpRefreshRate = max_refresh_rate    # This line starts the max_udp_refresh_timer
+        self._udp_refresh_rates = RefreshRates.load()
+        self._udp_refresh_mode = None
+        self._update_udp_refresh_mode()
+        self.robot.robotStatus_changed.connect(self._update_udp_refresh_mode)
+        self.robot.mode_changed.connect(self._update_udp_refresh_mode)
 
         # Initialize connection
         if address is None:
@@ -79,25 +88,23 @@ class RobotNetwork(QObject):
     #=================#
     #== UDP Message ==#
     #=================#
-    def send_udp(self, force_controller_neutral: bool = False):
+    def send_udp(self, udp_state: UdpState = None):
         host = self.robot_host
         if host == '':
             return
+
+        if udp_state is None:
+            udp_state = self.fetch_udp_state(refresh=False)
         
-        mode = 0 if not self.robot.enabled else {
+        mode = 0 if not udp_state.enabled else {
             RobotMode.AUTO: 1,
             RobotMode.TELEOP: 2,
             RobotMode.TEST: 3
-        }[self.robot.mode]
+        }[udp_state.mode]
 
         message = mode.to_bytes(1, sys.byteorder)
 
-        if force_controller_neutral:
-            states = [ControllerState()] * 2
-        else:
-            states = self.controllers.get_pilot_controllers_states()
-
-        for state in states:
+        for state in udp_state.contollers:
             axis_msg = struct.pack("f"*6, *state.axis)
             buttons = 0
             for i, b in enumerate(state.buttons):
@@ -113,6 +120,10 @@ class RobotNetwork(QObject):
         else:
             return True
 
+    def send_neutral_udp(self):
+        udp_state = UdpState(enabled=self.robot.enabled, mode=self.robot.mode)
+        self.send_udp(udp_state)
+
     #================#
     #== Main Slots ==#
     #================#
@@ -127,6 +138,7 @@ class RobotNetwork(QObject):
                 self._set_connection_status(ConnectionStatus.CONNECTED)
                 self.connectionSucceed.emit('localhost')
                 self._set_signalStrength(5, 0)
+                self.robot.set_program_status(ProgramStatus.RUNNING)
             else:
                 self.ssh_start()
 
@@ -142,8 +154,11 @@ class RobotNetwork(QObject):
         self.ssh_kill()
         self._set_connection_status(ConnectionStatus.DISCONNECTED)
         self._set_signalStrength(0, 0)
+        self.robot.set_program_status(ProgramStatus.IDLE)
         self.telemetry.clear_and_disconnect()
-        self.robot.enabled = False
+        self._udp_avg_dt = 0
+        self._last_udp_t = None
+        self.udpAvgDt_changed.emit(0)
         self.disconnected.emit()
 
     def close(self):
@@ -152,19 +167,32 @@ class RobotNetwork(QObject):
 
     @Slot()
     def udp_refresh(self) -> None:
+        udp_state = self.fetch_udp_state()
+        min_refresh = self.sender() is self._min_udp_refresh_timer
+        if min_refresh and udp_state.is_same(self._last_udp_state):
+            return
+
         self._max_udp_refresh_timer.stop()
+        self._min_udp_refresh_timer.stop()
 
         if not self.muteUdpRefresh:
-            self._udp_sent_count += 1
-            
-            succeed = self.send_udp()
+            self.tick_udp_avg_dt()
+            succeed = self.send_udp(udp_state)
+            self._last_udp_state = udp_state
         else:
             succeed = True
 
         if not succeed: 
             self.connectionLost.emit(self._ssh.host, 'Impossible to send UDP message. See console for more details.')
             self.disconnectRobot()
-        self._max_udp_refresh_timer.start(self._max_udp_refresh_rate)
+        
+        self._set_udp_refresh_timers_intervals(minRate=self.minUdpRefreshRate, maxRate=self.maxUdpRefreshRate)
+
+
+    def fetch_udp_state(self, refresh=True) -> UdpState:
+        pilot1, pilot2 = self.controllers.get_pilot_controllers_states(refresh=refresh)
+        return UdpState(controller1=pilot1, controller2=pilot2, 
+                        enabled=self.robot.enabled, mode=self.robot.mode)
 
     #=======================#
     #== SSH Communication ==#
@@ -207,7 +235,7 @@ class RobotNetwork(QObject):
                     break
                 
                 # Pull telemetry for 2.5 seconds
-                self.wait_and_pull_telemetry(2.5)
+                self.wait_and_pull_telemetry(2)
 
                 # Refresh ping and signal strength
                 if not self.refresh_signal_strength():
@@ -229,14 +257,14 @@ class RobotNetwork(QObject):
 
         except SystemError:
             pass
-        except Exception:
+        except Exception as e:
             self.connectionLost.emit(self._ssh.host, 
             'An error occured when communicating with the robot. Check the console for more details.')
-            print("An error occured when communicating with the robot.")
+            print("An error occured when communicating with the robot.", e)
             traceback.print_exc()
         finally:
             if self._ssh is not None:
-                self._ssh.run('rm -f robot.lock')
+                self._ssh.run('rm -f' + LOCK_PATH, hide=True, warn=True, timeout=5)
                 self._ssh.close()
                 self._ssh = None
 
@@ -296,7 +324,7 @@ class RobotNetwork(QObject):
                 """
                 Read the date of the last modification of the lock file on the robot.
                 """
-                lock_stat = ssh_run("stat robot.lock -c %Y")
+                lock_stat = ssh_run(f'stat {SCRIPT_CWD+LOCK_PATH} -c %Y')
                 if lock_stat.exited != 0:
                     return 0
                 return float(lock_stat.stdout)
@@ -313,7 +341,7 @@ class RobotNetwork(QObject):
                 if new_lock_date != lock_date and new_lock_date != 0:
                     # If the lock file has been modified, it means that another Driver Station is using the robot.
                     # then read the hostname of the computer that locked the robot.
-                    lock_host = ssh_run("cat robot.lock").stdout.strip()
+                    lock_host = ssh_run("cat "+SCRIPT_CWD+LOCK_PATH).stdout.strip()
                     if lock_host == '':
                         lock_host = 'an unknown device'
                     elif lock_host == socket.gethostname():
@@ -327,13 +355,11 @@ class RobotNetwork(QObject):
                     return None
 
             # === Write lock file ===
-            ssh_run(f'echo "{socket.gethostname()}" > robot.lock')
+            ssh_run(f'echo "{socket.gethostname()}" > '+SCRIPT_CWD+LOCK_PATH)
 
             # === Push DS.sh script to the robot ===
             self._set_connection_status(ConnectionStatus.SETUP)
-            local_path = path.join(path.abspath(path.dirname(__file__)), 'DS.sh')
-            ssh.put(local_path, 'DS.sh')
-            status = ssh_run('chmod +x DS.sh')
+            status = self.push_ds_script(ssh)
             if status.stderr:
                 ssh.close()
                 self.connectionFailed.emit(ConnectionFailedReason.SETUP, 
@@ -360,7 +386,13 @@ class RobotNetwork(QObject):
             return "SSH connection with the robot has been lost."
 
         try:
-            status = self._ssh.run('./DS.sh', hide=True, warn=True, timeout=5)
+            status = self._ssh.run(SCRIPT_CWD+'DS.sh', hide=True, warn=True, timeout=5)
+            if self._request_program_date.is_set():
+                self._request_program_date.clear()
+                program_date = self._ssh.run('cat version.txt 2>/dev/null', hide=True, warn=True, timeout=5)
+                if program_date.stdout:
+                    self.robot.set_program_date(program_date.stdout.strip())
+
         except CommandTimedOut:
             print("Timeout when running the SSH script.")
             return False
@@ -369,7 +401,24 @@ class RobotNetwork(QObject):
             print(status.stderr)
             return "SSH script returned an error."
 
-        self.telemetry.refresh_robot_status(status.stdout)
+        telemetry_status = {}
+        for line in status.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            line_code, line_content = line[0], line[1:]
+            if line_code == 'S':
+                match line_content:
+                    case '0': 
+                        self.robot.set_program_status(ProgramStatus.IDLE)
+                    case '1': 
+                        self.robot.set_program_status(ProgramStatus.STARTING)
+                    case '2': 
+                        self.robot.set_program_status(ProgramStatus.RUNNING)
+            telemetry_status[line_code] = line_content
+
+        self.telemetry.refresh_robot_status(telemetry_status)
 
         return False
 
@@ -394,6 +443,18 @@ class RobotNetwork(QObject):
         else:
             strength = 1    # Packet loss <= 2/3 and mean ping >= 500ms
         return strength, ping_result.avg_rtt
+
+    def push_ds_script(self, ssh):
+        local_path = path.join(path.abspath(path.dirname(__file__)), 'DS.sh')
+        # Ensure linux end of line
+        with open(local_path, 'rb') as f:
+            content = f.read()
+        content = content.replace(WINDOWS_LINE_ENDING, UNIX_LINE_ENDING)
+        with open(local_path, 'wb') as f:
+            f.write(content)
+
+        ssh.put(local_path, SCRIPT_CWD + 'DS.sh')
+        return ssh.run('chmod +x '+ SCRIPT_CWD+'DS.sh', hide=True, warn=True, timeout=5)
 
     #====================#
     #== QML PROPERTIES ==#
@@ -470,7 +531,7 @@ class RobotNetwork(QObject):
                             self.telemetry.set_telemetry_data(json.loads(data))
                     except IOError:
                         pass
-                    except:
+                    except Exception:
                         print("An error occured when pulling telemetry from the robot.")
                         traceback.print_exc()
 
@@ -500,25 +561,78 @@ class RobotNetwork(QObject):
         self.availableAddresses_changed.emit()
         QSettings('EV3DriverStation').setValue('availableAddresses', self._available_addresses)   
 
-    # --- Max UDP Refresh Rate --- #
+    # --- Refresh Rate --- #
     maxUdpRefreshRate_changed = Signal(int)
     @Property(int, notify=maxUdpRefreshRate_changed)
     def maxUdpRefreshRate(self) -> int:
-        return self._max_udp_refresh_rate
+        return getattr(self._udp_refresh_rates, self._udp_refresh_mode).max
 
     @maxUdpRefreshRate.setter
     def maxUdpRefreshRate(self, value: int):
         t = int(round(value))
-        if t == self._max_udp_refresh_rate:
+        if t == self.maxUdpRefreshRate:
             return
 
-        self._max_udp_refresh_rate = t
-        self._max_udp_refresh_timer.stop()
-
-        if t > 0:
-            self._max_udp_refresh_timer.start(t)
-
+        self._udp_refresh_rates = self._udp_refresh_rates.set(self._udp_refresh_mode, max=t)
         self.maxUdpRefreshRate_changed.emit(t)
+        self._set_udp_refresh_timers_intervals(maxRate=t)
+
+        if self.minUdpRefreshRate > t:
+            self.minUdpRefreshRate = t
+
+    minUdpRefreshRate_changed = Signal(int)
+    @Property(int, notify=minUdpRefreshRate_changed)
+    def minUdpRefreshRate(self) -> int:
+        return getattr(self._udp_refresh_rates, self._udp_refresh_mode).min
+
+    @minUdpRefreshRate.setter
+    def minUdpRefreshRate(self, value: int):
+        t = int(round(value))
+        if t == self.minUdpRefreshRate:
+            return
+
+        self._udp_refresh_rates = self._udp_refresh_rates.set(self._udp_refresh_mode, min=t)
+        self.minUdpRefreshRate_changed.emit(t)
+        self._set_udp_refresh_timers_intervals(minRate=t)
+
+    @Slot()
+    def _update_udp_refresh_mode(self):
+        if self.robot.robotStatus == RobotStatus.ENABLED:
+            mode = {
+                RobotMode.AUTO: 'auto',
+                RobotMode.TELEOP: 'teleop',
+                RobotMode.TEST: 'teleop'
+            }[self.robot.mode]
+        elif self.robot.robotStatus == RobotStatus.DISABLED:
+            mode = 'disabled'
+        else:
+            mode = 'idle'
+        
+        if mode != self._udp_refresh_mode:
+            self._udp_refresh_mode = mode
+            minRate, maxRate = self.minUdpRefreshRate, self.maxUdpRefreshRate
+            self.maxUdpRefreshRate_changed.emit(maxRate)
+            self.minUdpRefreshRate_changed.emit(minRate)
+            self._set_udp_refresh_timers_intervals(maxRate, minRate)
+
+    def _set_udp_refresh_timers_intervals(self, maxRate=None, minRate=None):
+        if self._last_udp_t is not None:
+            dt = (time.time() - self._last_udp_t) * 1000
+        else:
+            dt = 0
+
+        if maxRate is not None:
+            if maxRate > 0:
+                self._max_udp_refresh_timer.start(max(maxRate-dt, 0))
+            else:
+                self._max_udp_refresh_timer.stop()
+        if minRate is not None:
+            if maxRate is None:
+                maxRate = self.maxUdpRefreshRate
+            if minRate>0 and minRate < maxRate:
+                self._min_udp_refresh_timer.start(max(minRate-dt, 0))
+            else:
+                self._min_udp_refresh_timer.stop()
 
     # --- Pull Telemetry Rate --- #
     pullTelemetryRate_changed = Signal(int)
@@ -539,7 +653,8 @@ class RobotNetwork(QObject):
     muteUdpRefresh_changed = Signal(bool)
     @Property(bool, notify=muteUdpRefresh_changed)
     def muteUdpRefresh(self) -> bool:
-        return self._connection_status != ConnectionStatus.CONNECTED or self._mute_udp_refresh
+        return self._connection_status != ConnectionStatus.CONNECTED\
+            or self._mute_udp_refresh
 
     @muteUdpRefresh.setter
     def muteUdpRefresh(self, value: bool):
@@ -554,12 +669,20 @@ class RobotNetwork(QObject):
     def udpAvgDt(self) -> int:
         return self._udp_avg_dt
 
-    @Slot()
-    def refresh_udp_avg_dt(self) -> None:
-        t = self._udp_sent_count_timer.interval()
-        self._udp_avg_dt = 0 if self._udp_sent_count == 0 else t / self._udp_sent_count
+    def tick_udp_avg_dt(self) -> None:
+        last_udp_t = self._last_udp_t
+        t = time.time()
+        self._last_udp_t = t
+
+        if last_udp_t is None:
+            return
+
+        last_dt = (t-last_udp_t) * 1000
+        if self._udp_avg_dt == 0 or abs(last_dt-self._udp_avg_dt) > 1000:
+            self._udp_avg_dt = last_dt
+        else:
+            self._udp_avg_dt = self._udp_avg_dt * 0.9 + last_dt * 0.1
         self.udpAvgDt_changed.emit(self._udp_avg_dt)
-        self._udp_sent_count = 0
 
 
 class ConnectionStatus(str, Enum):
@@ -585,3 +708,72 @@ class ConnectionFailedReason(str, Enum):
     @classmethod
     def __contains__(cls, item):
         return item in cls.__members__.values()
+
+
+class UdpState(NamedTuple):
+    controller1: ControllerState = ControllerState()
+    controller2: ControllerState = ControllerState()
+    enabled: bool = False
+    mode: RobotMode = RobotMode.TELEOP
+
+    @property
+    def contollers(self) -> tuple[ControllerState, ControllerState]:
+        return self.controller1, self.controller2
+
+    def is_same(self, other: UdpState, axis_tolerance: float = 0.05) -> bool:
+        if other is None:
+            return False
+        return self.controller1.is_same(other.controller1) \
+           and self.controller2.is_same(other.controller2) \
+           and ((not self.enabled and not other.enabled) or self.mode == other.mode)
+
+
+class Rates(NamedTuple):
+    max: int = 30
+    min: int = 0
+
+
+class RefreshRates(NamedTuple):
+    idle: Rates = Rates(5000, 1000)
+    disabled: Rates = Rates(500, 100)
+    auto: Rates = Rates(40)
+    teleop: Rates = Rates(50,30)
+
+    def save(self):
+        d = self.to_dict()
+        del d['idle']
+        QSettings('EV3DriverStation').setValue('refreshRates', self.to_dict())
+
+    @classmethod
+    def load(cls):
+        saved = QSettings('EV3DriverStation').value('refreshRates', None)
+        if saved is not None:
+            del saved['idle']
+            return cls.from_dict(saved)
+        return cls()
+
+    def to_dict(self):
+        return {
+            'idle': (self.idle.max, self.idle.min),
+            'disabled': (self.disabled.max, self.disabled.min),
+            'auto': (self.auto.max, self.auto.min),
+            'teleop': (self.teleop.max, self.teleop.min)
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        d = {k: Rates(*v) for k, v in d.items()}
+        return cls(**d)
+
+    def set(self, mode, max=None, min=None, save=True):
+        d = dict()
+        if max is not None:
+            d['max'] = max
+        if min is not None:
+            d['min'] = min
+        if d:
+            d = self._replace(**{mode: getattr(self, mode)._replace(**d)})
+            d.save()
+            return d
+        else:
+            return self

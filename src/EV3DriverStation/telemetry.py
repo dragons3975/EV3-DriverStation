@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from enum import Enum
 
@@ -10,7 +11,6 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 class Telemetry(QObject):
     def __init__(self):
         super().__init__()
-        self._program_last_update = ''
         self._ev3_voltage = 0
         self._aux_voltage = 0
         self._ev3_current = 0
@@ -19,6 +19,8 @@ class Telemetry(QObject):
         self._telemetry_data = {}
         self._freeze_telemetry = False
         self._telemetry_status = TelemetryStatus.UNAVAILABLE
+        self._last_telemetry_t = None
+        self._telemetry_avg_dt = 0
 
         # self._network_tables = None
         # self._nt_refresh_rate = network_tables_refresh_rate
@@ -28,42 +30,30 @@ class Telemetry(QObject):
     
     @Slot()
     def clear_and_disconnect(self):
-        self._program_last_update = ''
-        self.programLastUpdate_changed.emit(self._program_last_update)
-
         self.set_ev3_voltage(0)
         self.set_ev3_current(0)
         self.set_cpu_load(0)
         self.set_telemetry_data(None)
 
+        self._telemetry_avg_dt = None
+        self._last_telemetry_t = 0
+
         # self.disconnect_network_tables()
 
 
-    def refresh_robot_status(self, status: str):
+    def refresh_robot_status(self, status: dict[str, str]):
         """
         Refresh the robot status from the string provided by the DS.sh script output.
         """
-        self.set_program_date(None)
-        for line in status.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            line_code, line_content = line[0], line[1:]
-
-            if line_code == 'A':
-                try:
-                    date = datetime.strptime(line_content, "%Y%m%d%H%M%S")
-                except ValueError:
-                    date = None
-                self.set_program_date(date)
-            elif line_code == 'V':
-                self.set_ev3_voltage(float(line_content)/1000)
-            elif line_code == 'A':
-                self.set_aux_voltage(float(line_content)/1000)
-            elif line_code == 'C':
-                self.set_ev3_current(float(line_content))
-            elif line_code == 'L':
-                self.set_cpu_load(float(line_content))
+        for code, content in status.items():
+            if code == 'V':
+                self.set_ev3_voltage(float(content)/1000)
+            elif code == 'A':
+                self.set_aux_voltage(float(content)/1000)
+            elif code == 'C':
+                self.set_ev3_current(float(content))
+            elif code == 'L':
+                self.set_cpu_load(float(content))
 
     #====================#
     #== Network Tables ==#
@@ -111,33 +101,6 @@ class Telemetry(QObject):
     #====================#
     #== QML PROPERTIES ==#
     #====================#
-    # --- Program date --- #
-    programLastUpdate_changed = Signal(str)
-    @Property(str, notify=programLastUpdate_changed)
-    def programLastUpdate(self) -> str:
-        return self._program_last_update
-
-    def set_program_date(self, date: float | None):
-        if date is None:
-            date = ""
-        else:
-            age_s = (datetime.now() - date).total_seconds()
-            
-            if age_s < 0:
-                date = "Invalid date"
-            elif age_s < 60:
-                date = f"{round(age_s/10)*10:.0f} seconds ago"
-            elif age_s < 3600:
-                date = f"{age_s // 60:.0f} min ago"
-            elif age_s < 86400:
-                date = date.strftime("Today %H:%M")
-            else:
-                date = date.strftime("%d/%m/%y %H:%M")
-
-        if date != self._program_last_update:
-            self._program_last_update = date 
-            self.programLastUpdate_changed.emit(self._program_last_update)
-
     # --- EV3 voltage --- #
     ev3Voltage_changed = Signal(float)
     @Property(float, notify=ev3Voltage_changed)
@@ -200,10 +163,36 @@ class Telemetry(QObject):
         return self._freeze_telemetry
 
     @freezeTelemetry.setter
-    def freezeTelemetry(self, value: bool):
-        if value != self._freeze_telemetry:
-            self._freeze_telemetry = value
-            self.freezeTelemetry_changed.emit(self._freeze_telemetry)
+    def freezeTelemetry(self, freeze: bool):
+        if freeze != self._freeze_telemetry:
+            self._freeze_telemetry = freeze
+            self.freezeTelemetry_changed.emit(freeze)
+
+            self._telemetry_avg_dt = 0
+            self._last_telemetry_t = None
+            self.telemetryAvgDt_changed.emit(0)
+            
+
+    # --- Telemetry average dt --- #
+    telemetryAvgDt_changed = Signal(float)
+    @Property(float, notify=telemetryAvgDt_changed)
+    def udpAvgDt(self) -> float:
+        return self._telemetry_avg_dt
+
+    def tick_telemetry_avg_dt(self) -> None:
+        last_udp_t = self._last_telemetry_t
+        t = time.time()
+        self._last_telemetry_t = t
+
+        if last_udp_t is None:
+            return
+
+        last_dt = (t-last_udp_t) * 1000
+        if self._telemetry_avg_dt==0 or abs(last_dt-self._telemetry_avg_dt) > 1000:
+            self._telemetry_avg_dt = last_dt
+        else:
+            self._telemetry_avg_dt = self._telemetry_avg_dt * 0.8 + last_dt * 0.2
+        self.telemetryAvgDt_changed.emit(self._telemetry_avg_dt)
     
     # --- Telemetry data --- #
     telemetryData_changed = Signal()

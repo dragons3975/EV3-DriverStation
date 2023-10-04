@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
+import QtQuick.Effects
 import QtQuick.Layouts
 
 import "CustomUI/"
@@ -13,7 +14,7 @@ Rectangle {
 
     DisableRect {
         visible: network.connectionStatus !== "Connected"
-        text: "Robot is Disconnected"
+        text: network.connectionStatus !== "Disconnected" ? qsTr("Connecting to Robot") : qsTr("Robot is Disconnected")
     }
 
     property int modeButtonHeight: 40
@@ -21,7 +22,7 @@ Rectangle {
         id: modeButton
         property string mode: ""
 
-        property bool currentMode: robot.mode === mode
+        property bool currentMode: robot.mode === mode && robot.robotStatus !== "Idle"
         
         text: mode
         height: modeButtonHeight
@@ -39,26 +40,26 @@ Rectangle {
 
         font.bold: currentMode
 
-        onClicked: {
-            robot.mode = mode
-        }
+        onClicked: if(robot.robotStatus !== "Idle") robot.mode = mode
     }
 
     component PlayStopButton: Button {
         property bool enabled: false
 
-        icon.width: 50
-        icon.height: 50
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+
+        height: parent.height
+        width: height
+        icon.width: height
+        icon.height: height
 
         Material.roundedScale: Material.SmallScale
 
         opacity: enabled ? 1 : 0.3
         Material.elevation: enabled ? 3 : -5
 
-        width: height
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
         bottomInset: 0
         topInset: 0
         leftPadding: 15
@@ -67,245 +68,327 @@ Rectangle {
         bottomPadding:15
     }
 
-
     RowLayout {
         anchors.fill: parent
         spacing: 10
         anchors.margins: 5
 
-        Item {
+
+        /********************************************
+         *             Robot Mode Frame             *
+         ********************************************/
+        ColumnLayout {
             Layout.fillHeight: true
             Layout.fillWidth: true
-            Layout.horizontalStretchFactor: 4
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
+            spacing: 0
 
-                RowLayout {
-                    Layout.fillWidth: true
+            Header {
+                text: qsTr("Robot Mode")
+            }
+
+            // === Robot program Frame ===
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                //  -- Warning Robot Program --
+                Rectangle {
+                    visible: robot.programStatus === 'Idle'
+
+                    anchors.centerIn: parent
+                    width: parent.width - 40
+                    height: 30
+                    radius: 15
+
+                    color: Material.color(Material.Orange, Material.Shade500)
+                    Image {
+                        id: iconSource
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 20
+                        mipmap: true
+                        source: "assets/warning.svg"
+                        width: 21
+                        height: 18
+                        visible : false
+                    }
+
+                    MultiEffect {
+                        anchors.fill: iconSource
+                        source: iconSource
+                        colorization: 1.0
+                        colorizationColor: Material.color(Material.Orange, Material.Shade100)
+                    }
 
                     Label {
-                        Layout.fillWidth: true
-                        text: "Robot Mode"
-                        leftPadding: 30
-                        font.bold: true
-                        font.pixelSize: 17
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 60
+                        text: qsTr("Robot program is not running.")
+                        font.pixelSize: 15
+                        color: Material.foreground
                     }
-                }
-                Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                }
-                Item {
-                    Layout.fillWidth: true
-                    Layout.maximumHeight: modeButtonHeight * 3
-                    Layout.minimumHeight: modeButtonHeight * 3
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        spacing: 0
-                        ModeButton {
-                            mode: "Autonomous"
-                        }
-                        ModeButton {
-                            mode: "Teleoperated"
-                        }
-                        ModeButton {
-                            mode: "Test"
-                        }
+                    SequentialAnimation on opacity {
+                        loops: Animation.Infinite
+                        running: true
+                        PropertyAnimation { to: 0.5; duration: 750 ; easing.type: Easing.InOutQuad }
+                        PropertyAnimation { to: 1;   duration: 750 ; easing.type: Easing.InOutQuad }
                     }
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                }
-
-                Item{
-                    Layout.fillWidth: true
-                    Layout.minimumHeight: 60
-
-                    Item{
-                        anchors.fill: parent
-                        PlayStopButton{
-                            id: startButton
-                            icon.source: "assets/play.svg"
-                            Material.background: Material.Green
-
-                            enabled: robot.enabled
-                            onClicked: robot.enabled = true
-                        }
-                        PlayStopButton{
-                            id: stopButton
-                            icon.source: robot.mode=="Autonomous" ? "assets/stop.svg" : "assets/pause.svg"
-                            Material.background: Material.Red
-                            
-                            enabled: !robot.enabled
-                            onClicked: robot.enabled = false
-                            
-                            anchors.left: startButton.right
-                        }
-
-                        Label {
-                            Layout.fillHeight: true
-                            Layout.fillWidth: true
-
-                            text: Qt.formatTime(new Date(robot.time*1000), 'mm:ss')
-                            font.pixelSize: 30
-                            horizontalAlignment: Qt.AlignHCenter
-                            verticalAlignment: Qt.AlignVCenter
-
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: startButton.right
-                            anchors.right: parent.right
-                        }
-                    }
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                }
-
-                CheckBox {
-                    text: "Auto-disable robot with timer"
-                    font.pixelSize: 12
-                    checked: robot.auto_disable
-                    onCheckedChanged: {robot.auto_disable = checked}
-
-                    height: 20
-                    Layout.fillWidth: true
-                    Layout.maximumHeight: height
-                    Layout.minimumHeight: height
                 }
             }
 
+            // === Robot mode selector ===
+            Item {
+                Layout.fillWidth: true
+                Layout.maximumHeight: modeButtonHeight * 3
+                Layout.minimumHeight: modeButtonHeight * 3
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 0
+                    ModeButton {
+                        mode: "Autonomous"
+                    }
+                    Rectangle { width: parent.width; height: 2; color: Material.frameColor }
+                    ModeButton {
+                        mode: "Teleoperated"
+                    }
+                    Rectangle { width: parent.width; height: 2; color: Material.frameColor }
+                    ModeButton {
+                        mode: "Test"
+                    }
+                }
+            }
+
+            // === Spacer ===
+            Item {
+                Layout.fillWidth: true
+                height: 20
+            }
+
+            // === Robot Enable/Disable frame ===
+            Item{
+                Layout.fillWidth: true
+                height: 50
+
+                // Enable button
+                PlayStopButton{
+                    id: startButton
+                    icon.source: "assets/play.svg"
+                    Material.background: Material.Green
+
+                    enabled: robot.robotStatus === "Enabled"
+                    onClicked: if (robot.robotStatus !== "Idle") robot.enabled = true
+                }
+                // Disable button
+                PlayStopButton{
+                    id: stopButton
+                    icon.source: robot.mode=="Autonomous" ? "assets/stop.svg" : "assets/pause.svg"
+                    Material.background: Material.Red
+                    
+                    enabled: robot.robotStatus === "Disabled"
+                    onClicked: if (robot.robotStatus !== "Idle") robot.enabled = false
+
+                    anchors.left: startButton.right
+                }
+
+                // Timer
+                Label {
+                    text: Qt.formatTime(new Date(robot.time*1000), 'mm:ss:') + (robot.time).toFixed(2).slice(-2)
+                    font.pixelSize: 30
+                    horizontalAlignment: Qt.AlignHCenter
+                    verticalAlignment: Qt.AlignVCenter
+                    
+                    anchors.left: stopButton.right
+                    anchors.leftMargin: 10
+                    anchors.right: autoDisable.left
+                    anchors.rightMargin: 10
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                }
+                
+                // Auto-disable
+                Item{
+                    id: autoDisable
+                    width: 100
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+
+                    Label{
+                        id: autoDisableLabel
+                        text: qsTr("Auto-disable")
+                        font.pixelSize: 12
+
+                        horizontalAlignment: Qt.AlignHCenter
+                        verticalAlignment: Qt.AlignVCenter
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                    }
+                    Switch{
+                        checked: robot.auto_disable
+                        onCheckedChanged: robot.auto_disable = checked
+
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: autoDisableLabel.bottom
+                        anchors.topMargin: 10
+                        anchors.bottom: parent.bottom
+                        width: 65
+                        height: autoDisable.height - autoDisableLabel.height - 20
+                    }
+                }
+            }
             
         }
 
-        ToolSeparator {
-            id: toolSeparator
-            Layout.fillHeight: true
+        // === Central Separator ===
+        Rectangle {
+                Layout.fillHeight: true
+                Layout.maximumWidth: width
+                height: parent.height
+                width: 1
+                color: Material.frameColor
         }
 
-        Item {
+        /********************************************
+         *             Telemetry Frame              *
+         ********************************************/
+        ColumnLayout {
             Layout.fillHeight: true
-            Layout.fillWidth: true
-            Layout.horizontalStretchFactor: 5
+            width: .55 * parent.width
+            Layout.minimumWidth: width
+            Layout.maximumWidth: width
 
-            ColumnLayout {
-                anchors.fill: parent
-                Header {
-                    text: "Telemetry"
+            Header {
+                text: qsTr("Telemetry")
 
-                    HeaderButton{
-                        source: telemetry.freezeTelemetry ? "assets/play.svg" : "assets/pause.svg"
-                        tooltip: telemetry.freezeTelemetry ? "Resume Telemetry" : "Pause Telemetry"
-                        onClicked: telemetry.freezeTelemetry = !telemetry.freezeTelemetry
+                HeaderButton{
+                    source: telemetry.freezeTelemetry ? "assets/play.svg" : "assets/pause.svg"
+                    tooltip: telemetry.freezeTelemetry ? "Resume Telemetry" : "Pause Telemetry"
+                    onClicked: telemetry.freezeTelemetry = !telemetry.freezeTelemetry
+                }
+            }
+
+            // === Spacer ===
+            Item {
+                Layout.fillWidth: true
+                height: 10
+            }
+
+            // === Telemetry List ===
+            ListView {
+                id: telemetryList
+                clip: true
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                model: telemetry.telemetryData
+
+                delegate: Entry {
+                    width: telemetryList.width
+                    name: modelData.key
+                    value: modelData.value
+                }
+
+                Label{
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -30
+                    visible: telemetry.telemetryStatus === "Unavailable"
+                    text: {
+                        if (telemetry.telemetryStatus === "Connecting") return qsTr("Connecting to Telemetry...")
+                        else if (telemetry.freezeTelemetry) return qsTr("Telemetry refresh is paused.")
+                        else return qsTr("Telemetry is unavailable.")
                     }
                 }
 
-                Item {
+                ScrollIndicator.vertical: ScrollIndicator { }
+            }
+
+            // === Horizontal separator ===
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.maximumHeight: height
+                width: parent.width
+                height: 1
+                color: Material.frameColor
+            }
+
+            // === Robot Performance Stats ===
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+
+                columnSpacing: 2
+                rowSpacing: 3
+
+                Entry {
+                    name: qsTr("EV3 Voltage:")
+                    value: telemetry.ev3Voltage.toFixed(2)
+                    suffix: " V"
+                    isNA: telemetry.ev3Voltage === 0
+                    color: {
+                        if (telemetry.ev3Voltage > 7.25) return Material.color(Material.LightGreen)
+                        else if (telemetry.ev3Voltage > 7) return Material.color(Material.Orange)
+                        else return Material.color(Material.Red)
+                    }
+                    alignValue: Text.AlignLeft
+
                     Layout.fillWidth: true
-                    height: 10
                 }
 
-                ListView {
-                    id: telemetryList
-                    clip: true
+                Entry {
+                    name: qsTr("Auxilary Voltage:")
+                    value: telemetry.auxVoltage.toFixed(2)
+                    suffix: " V"
+                    isNA: telemetry.auxVoltage === 0
+                    color: {
+                        if (telemetry.auxVoltage > 7) return Material.color(Material.LightGreen)
+                        else if (telemetry.auxVoltage > 6) return Material.color(Material.Orange)
+                        else return Material.color(Material.Red)
+                    }
+                    alignValue: Text.AlignLeft
+
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    model: telemetry.telemetryData
-
-                    delegate: Entry {
-                        width: telemetryList.width
-                        name: modelData.key
-                        value: modelData.value
-                    }
-
-                    Label{
-                        anchors.centerIn: parent
-                        anchors.verticalCenterOffset: -30
-                        visible: network.connectionStatus === "Connected" &&  telemetry.telemetryStatus === "Unavailable"
-                        text: {
-                            if (telemetry.telemetryStatus === "Connecting") return "Connecting to Telemetry..."
-                            else return "Telemetry is unavailable"
-                        }
-                    }
-
-                    ScrollIndicator.vertical: ScrollIndicator { }
                 }
 
-                Row {
+                Entry {
+                    property bool ampere: telemetry.ev3Current > 1000
+                    name: qsTr("EV3 Current:")
+                    value: ampere ? (telemetry.ev3Current/1000).toFixed(2) : telemetry.ev3Current.toFixed(0)
+                    suffix: ampere ? " A" : " mA"
+                    isNA: telemetry.ev3Current === 0
+                    alignValue: Text.AlignLeft
+
                     Layout.fillWidth: true
-
-                    Entry {
-                        width: parent.width / 2
-                        name: "EV3 Voltage:"
-                        value: telemetry.ev3Voltage.toFixed(2)
-                        suffix: " V"
-                        isNA: telemetry.ev3Voltage === 0
-                        color: {
-                            if (telemetry.ev3Voltage > 7) return Material.color(Material.LightGreen)
-                            else if (telemetry.ev3Voltage > 6.7) return Material.color(Material.Orange)
-                            else return Material.color(Material.Red)
-                        }
-                        alignValue: Text.AlignLeft
-                    }
-
-                    Entry {
-                        width: parent.width / 2
-                        name: "Auxilary Voltage:"
-                        value: telemetry.auxVoltage.toFixed(2)
-                        suffix: " V"
-                        isNA: telemetry.auxVoltage === 0
-                        color: {
-                            if (telemetry.auxVoltage > 7) return Material.color(Material.LightGreen)
-                            else if (telemetry.auxVoltage > 6) return Material.color(Material.Orange)
-                            else return Material.color(Material.Red)
-                        }
-                        alignValue: Text.AlignLeft
-                    }
                 }
+                
+                Entry {
+                    name: qsTr("CPU Load:")
+                    value: (telemetry.cpu*100).toFixed(0)
+                    suffix: "%"
+                    isNA: telemetry.cpu === 0
+                    color: {
+                        if (telemetry.cpu < 1) return Material.color(Material.LightGreen)
+                        if (telemetry.cpu < 1.5) return Material.color(Material.Orange)
+                        else return Material.color(Material.Red)
+                    }
+                    alignValue: Text.AlignLeft
 
-                Row {
                     Layout.fillWidth: true
-
-                    Entry {
-                        property bool ampere: telemetry.ev3Current > 1000
-                        width: parent.width / 2
-                        name: "EV3 Current:"
-                        value: ampere ? (telemetry.ev3Current/1000).toFixed(2) : telemetry.ev3Current.toFixed(0)
-                        suffix: ampere ? " A" : " mA"
-                        isNA: telemetry.ev3Current === 0
-
-                        alignValue: Text.AlignLeft
-                    }
-                    
-                    Entry {
-                        width: parent.width / 2
-                        name: "CPU Load:"
-                        value: (telemetry.cpu*100).toFixed(0)
-                        suffix: "%"
-                        isNA: telemetry.cpu === 0
-                        color: {
-                            if (telemetry.cpu < .75) return Material.color(Material.LightGreen)
-                            if (telemetry.cpu < 1) return Material.color(Material.Orange)
-                            else return Material.color(Material.Red)
-                        }
-                        alignValue: Text.AlignLeft
-                    }
-
                 }
+
                 Entry{
-                    Layout.fillWidth: true
-                    name: "Program last Update:"
-                    value: telemetry.programLastUpdate
+                    Layout.columnSpan: 2
+                    name: qsTr("Program last Update:")
+                    value: robot.programLastUpdate
                     alignValue: Text.AlignLeft
                     isNA: telemetry.programLastUpdate === ""
+                    height: 15
+
+                    Layout.fillWidth: true
                 }
             }
         }

@@ -49,7 +49,7 @@ class GuiApp(QGuiApplication):
 
         self.robot_network.mute_udp_refresh = True
         self.robot.enabled = False
-        self.robot_network.send_udp(force_controller_neutral=True)
+        self.robot_network.send_neutral_udp()
         self.robot_network.close()
         self.controllersManager.quit_pygame()
         return r

@@ -57,120 +57,132 @@ Rectangle {
         spacing: 20
         anchors.margins: 5
 
-        Item {
+        ColumnLayout {
             Layout.fillHeight: true
             Layout.fillWidth: true
             Layout.horizontalStretchFactor: 4
 
-            ColumnLayout {
-                anchors.fill: parent
+            Header{
+                text: qsTr("Detected Controllers")
 
-                RowLayout {
+                HeaderButton {
+                    text: "⟳"
+                    tooltip: qsTr("Refresh Controllers List")
+                    onClicked: controllers.refresh_controllers_list()
+                }
+            }
+            /*
+            RowLayout {
+                Layout.fillWidth: true
+
+                Label {
                     Layout.fillWidth: true
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: "Detected Controllers"
-                        leftPadding: 30
-                        font.bold: true
-                        font.pixelSize: 17
-                    }
-
-                    ToolButton {
-                        text: "⟳"
-                        font.bold: true
-                        font.pixelSize: 20
-                        Layout.minimumWidth: parent.height
-                        onClicked: controllers.refresh_controllers_list()
-                    }
+                    text: "Detected Controllers"
+                    leftPadding: 30
+                    font.bold: true
+                    font.pixelSize: 17
                 }
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 45
+                ToolButton {
+                    text: "⟳"
+                    font.bold: true
+                    font.pixelSize: 20
+                    Layout.minimumWidth: parent.height
+                    onClicked: controllers.refresh_controllers_list()
+                }
+            }
+            */
 
-                    color: Material.backgroundColor
+            Item{
+                height: 7
+                Layout.fillWidth: true
+            }
 
-                    Pane {
+            Rectangle {
+                Layout.fillWidth: true
+                height: 45
+
+                color: Material.backgroundColor
+
+                Pane {
+                    anchors.fill: parent
+                    anchors.bottomMargin: 5
+                    Material.background: Material.primaryColor
+                    Material.roundedScale: Material.SmallScale
+                    Material.elevation: 4
+
+                    RowLayout {
                         anchors.fill: parent
-                        anchors.bottomMargin: 5
-                        Material.background: Material.primaryColor
-                        Material.roundedScale: Material.SmallScale
-                        Material.elevation: 4
+                        spacing: 10
 
-                        RowLayout {
-                            anchors.fill: parent
-                            spacing: 10
+                        Label {
+                            leftPadding: 10
+                            verticalAlignment: Text.AlignVCenter
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            text: qsTr("Controller Name")
+                            font.bold: true
+                        }
 
-                            Label {
-                                leftPadding: 10
-                                verticalAlignment: Text.AlignVCenter
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                text: "Controller Name"
-                                font.bold: true
-                            }
+                        Label {
+                            id: labelP1
+                            text: "P1"
+                            Layout.fillHeight: true
+                            Layout.minimumWidth: 35
+                            Layout.maximumWidth: 35
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.bold: true
+                        }
 
-                            Label {
-                                id: labelP1
-                                text: "P1"
-                                Layout.fillHeight: true
-                                Layout.minimumWidth: 35
-                                Layout.maximumWidth: 35
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.bold: true
-                            }
-
-                            Label {
-                                id: labelP2
-                                text: "P2"
-                                Layout.fillHeight: true
-                                Layout.minimumWidth: 35
-                                Layout.maximumWidth: 35
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.bold: true
-                            }
+                        Label {
+                            id: labelP2
+                            text: "P2"
+                            Layout.fillHeight: true
+                            Layout.minimumWidth: 35
+                            Layout.maximumWidth: 35
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            font.bold: true
                         }
                     }
                 }
+            }
 
-                ListView {
-                    Layout.fillHeight: true
-                    Layout.fillWidth: true
-                    clip: true
+            ListView {
+                Layout.fillHeight: true
+                Layout.fillWidth: true
+                clip: true
 
-                    id: listView
-                    model: controllers.names
-                    spacing: 5
+                id: listView
+                model: controllers.names
+                spacing: 5
 
-                    delegate: ControllerSelector {
-                        controllerId: index + 1
-                        controllerName: modelData
-                    }
-
-                    Label {
-                        anchors.fill: parent
-                        text: "No controllers detected"
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        visible: controllers.names.length === 0
-                    }
+                delegate: ControllerSelector {
+                    controllerId: index + 1
+                    controllerName: modelData
                 }
 
-                Item {
-                    height: 40
-                    Layout.minimumHeight: height
-                    Layout.maximumHeight: height
-                    Layout.fillWidth: true
+                Label {
+                    anchors.fill: parent
+                    text: qsTr("No controllers detected")
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    visible: controllers.names.length === 0
+                }
+            }
 
-                    ControllerSelector {
-                        controllerId: 0
-                        controllerName: "Keyboard <i>(Emulate Controller)</i>"
+            Item {
+                height: 40
+                Layout.minimumHeight: height
+                Layout.maximumHeight: height
+                Layout.fillWidth: true
 
-                        anchors.fill: parent
-                    }
+                ControllerSelector {
+                    controllerId: 0
+                    controllerName: qsTr("Keyboard <i>(Emulate Controller)</i>")
+
+                    anchors.fill: parent
                 }
             }
         }

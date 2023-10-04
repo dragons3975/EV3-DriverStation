@@ -12,6 +12,7 @@ Item {
     property string suffix: ""
     property bool isNA: false
     property bool editable: false
+    property bool hovered: mouseArea.containsMouse
 
     property color color: Material.foreground
     property color disabledColor: Material.color(Material.Grey, Material.Shade500)
@@ -19,7 +20,7 @@ Item {
     signal clicked
 
     width: parent.width
-    height: 24
+    height: 20
 
     Rectangle{
         id: background
@@ -28,7 +29,7 @@ Item {
         radius: height / 2
 
         color: Material.foreground
-        opacity: 0
+        opacity: hovered ? 0.1 : 0
         Behavior on opacity {
             NumberAnimation {
                 duration: 200
@@ -44,10 +45,11 @@ Item {
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
 
-        color: isNA ? root.disabledColor : Material.foreground
-
+        font.pixelSize: parent.height * .65
         horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
+
+        color: isNA ? root.disabledColor : Material.foreground
     }
 
     Label {
@@ -58,6 +60,7 @@ Item {
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
 
+        font.pixelSize: parent.height * .65
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
 
@@ -77,9 +80,6 @@ Item {
             root.clicked()
         }
         hoverEnabled: true
-
-        onEntered: background.opacity = 0.1
-        onExited: background.opacity = 0
     }
 
 }
