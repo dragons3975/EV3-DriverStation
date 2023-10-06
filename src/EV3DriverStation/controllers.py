@@ -260,6 +260,16 @@ class ControllerState(NamedTuple):
     def is_neutral(self) -> bool:
         return self == ControllerState()
 
+    def with_deadzone(self, deadzone=.05) -> ControllerState:
+        return self._replace(
+            leftX=self.leftX if abs(self.leftX) > deadzone else 0,
+            leftY=self.leftY if abs(self.leftY) > deadzone else 0,
+            rightX=self.rightX if abs(self.rightX) > deadzone else 0,
+            rightY=self.rightY if abs(self.rightY) > deadzone else 0,
+            leftTrigger=self.leftTrigger if self.leftTrigger > deadzone-1 else -1,
+            rightTrigger=self.rightTrigger if self.rightTrigger > deadzone-1 else -1,
+        )
+
     def is_same(self, other: ControllerState, axis_tolerance=.05) -> bool:
         return  self.buttons == other.buttons and \
                 all(abs(a - b) <= axis_tolerance for a, b in zip(self.axis, other.axis, strict=True))
@@ -357,7 +367,7 @@ class Controller:
                     LeftStick=buttons[8],
                     RightStick=buttons[9],
                 )
-        return state
+        return state.with_deadzone()
 
 
 class Keyboard(Controller):
