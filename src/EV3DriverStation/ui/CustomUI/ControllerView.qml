@@ -69,7 +69,7 @@ Rectangle {
         }
     }
 
-    function formatAxisValue(value) {
+    function formatAxisValue(value: float) {
         return (value>=0?'+':'') + value.toFixed(2)
     }
 

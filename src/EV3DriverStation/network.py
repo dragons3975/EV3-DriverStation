@@ -13,10 +13,12 @@ from os import path
 from tempfile import SpooledTemporaryFile
 from typing import NamedTuple
 
+from fabric import Config as SSHConfig
 from fabric import Connection as SSHConnection
 from icmplib import ping
+from invoke import Responder
 from invoke.exceptions import CommandTimedOut
-from paramiko.ssh_exception import AuthenticationException, NoValidConnectionsError
+from paramiko.ssh_exception import AuthenticationException, NoValidConnectionsError, SSHException
 from PySide6.QtCore import Property, QObject, QSettings, QTimer, Signal, Slot
 
 from .controllers import ControllersManager, ControllerState
@@ -227,15 +229,20 @@ class RobotNetwork(QObject):
                 return
             self._ssh = ssh
 
-            lostConnexionReason = self.refresh_ssh_status()
+            # lostConnexionReason = self.refresh_ssh_status()
 
-            while not lostConnexionReason:
+            while self._ssh.is_connected:
                 if not self.refresh_signal_strength():
                     lostConnexionReason = "Robot didn't respond to ping in time."
                     break
+
+                time.sleep(1)
                 
                 # Pull telemetry for 2.5 seconds
-                self.wait_and_pull_telemetry(2)
+                if not self.wait_and_pull_telemetry(2):
+                    lostConnexionReason = "SSH connection was closed."
+                    break
+                
 
                 # Refresh ping and signal strength
                 if not self.refresh_signal_strength():
@@ -243,15 +250,19 @@ class RobotNetwork(QObject):
                     break
 
                 # Pull telemetry for 1 seconds
-                self.wait_and_pull_telemetry(1)
+                if not self.wait_and_pull_telemetry(1):
+                    lostConnexionReason = "SSH connection was closed."
+                    break
 
                 # Refresh robot status
                 lostConnexionReason = self.refresh_ssh_status()
                 if lostConnexionReason:
-                    break
+                   break
                 
                 # Pull telemetry for 1 seconds
-                self.wait_and_pull_telemetry(1)
+                if not self.wait_and_pull_telemetry(1):
+                    lostConnexionReason = "SSH connection was closed."
+                    break
 
             self.connectionLost.emit(self._ssh.host, lostConnexionReason)
 
@@ -264,7 +275,10 @@ class RobotNetwork(QObject):
             traceback.print_exc()
         finally:
             if self._ssh is not None:
-                self._ssh.run('rm -f' + LOCK_PATH, hide=True, warn=True, timeout=5)
+                try:
+                    self._ssh.run('rm -f' + LOCK_PATH, hide=True, warn=True, timeout=5)
+                except Exception:
+                    pass
                 self._ssh.close()
                 self._ssh = None
 
@@ -285,28 +299,40 @@ class RobotNetwork(QObject):
             host, port = host.split(':', 1)
         else:
             port = '22'
+
+        # === Ping robot ===
+        self._set_connection_status(ConnectionStatus.PING)
+        strength, avg_ping = self.get_signal_strength(host)
+        if strength <= 0:
+            self.connectionFailed.emit(ConnectionFailedReason.UNREACHABLE, 
+                                       f"Address <i>{host}</i> doesn't respond to ping. "
+                                       "Check robot address and network quality.")
+            return None
+        else:
+            self._set_signalStrength(strength, avg_ping)
         
         # === Initiate SSH Connection ===
         self._set_connection_status(ConnectionStatus.AUTH)
         try:
+            config = SSHConfig(overrides={'sudo': {'password': password}})
             ssh = SSHConnection(f"{username}@{host}:{port}", connect_timeout=30,
-                                connect_kwargs=dict(password= password))
+                                connect_kwargs=dict(password= password),
+                                config=config)
             ssh.open()
         except TimeoutError:
             self.connectionFailed.emit(ConnectionFailedReason.UNREACHABLE, 
-                                       f'Invalid robot address: <i>{host}</i>. (Or robot is too busy)')
+                                       f"Connection to <i>{host}</i> timed-out. (Robot might be to busy to respond...)")
             return None
         except NoValidConnectionsError:
             self.connectionFailed.emit(ConnectionFailedReason.UNREACHABLE, 
-                                       f'Invalid robot address: <i>{host}:{port}</i>.')
+                                       f'<i>{host}:{port}</i> is not a EV3 robot. (Or ssh is disabled.)')
             return None
         except AuthenticationException:
-            self.connectionFailed.emit(ConnectionFailedReason.AUTH, f'Impossible to login to the robot with '
-                                                                f'username: "{username}" and password: "{password}".')
+            self.connectionFailed.emit(ConnectionFailedReason.AUTH, f'Invalid authentication with credentials:'
+                                                                    f'"{username}:{password}".')
             return None
         except Exception:
-            msg = f'Error when connecting to the robot at <i>{host}:{port}</i>'
-            msg +=f' with username: "{username}" and password: "{password}".'
+            msg = f'Error when connecting to the robot at <i>{username}:{password}@{host}:{port}</i>.'
             print(msg)
             traceback.print_exc()
             self.connectionFailed.emit(ConnectionFailedReason.AUTH, msg+"\nCheck the console for more details.")
@@ -357,13 +383,10 @@ class RobotNetwork(QObject):
             # === Write lock file ===
             ssh_run(f'echo "{socket.gethostname()}" > '+SCRIPT_CWD+LOCK_PATH)
 
-            # === Push DS.sh script to the robot ===
+            # === Push DS.py script to the robot ===
             self._set_connection_status(ConnectionStatus.SETUP)
-            status = self.push_ds_script(ssh)
-            if status.stderr:
+            if not self.push_ds_script(ssh):
                 ssh.close()
-                self.connectionFailed.emit(ConnectionFailedReason.SETUP, 
-                                           "Impossible to make DriverStation script executable on the robot.")
                 return None
             
         except SystemExit:
@@ -454,7 +477,25 @@ class RobotNetwork(QObject):
             f.write(content)
 
         ssh.put(local_path, SCRIPT_CWD + 'DS.sh')
-        return ssh.run('chmod +x '+ SCRIPT_CWD+'DS.sh', hide=True, warn=True, timeout=5)
+        ssh.run("chmod +x " + SCRIPT_CWD + 'DS.sh', hide=True, warn=True, timeout=5)
+
+        # script_status = ssh.sudo('python '+ SCRIPT_CWD+'DS.sh', hide=True, warn=True, timeout=120)
+        # if script_status.stderr:
+        #     error = '|\t'+script_status.stderr.strip().replace('\n', '\n|\t')
+        #     if 'RuntimeError: Impossible to install dependencies:' in script_status.stderr:
+        #         print("Failed to install dependencies on the robot.")
+        #         print(error)
+        #         self.connectionFailed.emit(ConnectionFailedReason.SETUP, 
+        #                                    "Robot must access internet to install the telemetry script dependencies.")
+        #         return False
+        #     else:
+        #         print("Error when initiating the SSH script:")
+        #         print(error)
+        #         self.connectionFailed.emit(ConnectionFailedReason.SETUP, 
+        #                                    "Failed to initiate telemetry script on the robot. "
+        #                                    "Check the console for more details.")
+        #         return False
+        return True
 
     #====================#
     #== QML PROPERTIES ==#
@@ -517,7 +558,7 @@ class RobotNetwork(QObject):
     def wait_and_pull_telemetry(self, time_s: int):
         if self._ssh is None:
             time.sleep(time_s)
-            return
+            return True
 
         t0 = time.time()
         while time.time() - t0 < time_s:
@@ -531,12 +572,16 @@ class RobotNetwork(QObject):
                             self.telemetry.set_telemetry_data(json.loads(data))
                     except IOError:
                         pass
+                    except SSHException:
+                        return False
                     except Exception:
                         print("An error occured when pulling telemetry from the robot.")
                         traceback.print_exc()
+                        return False
 
             # Sleep for the remaining time or pull_telemetry_rate
             time.sleep(min((time.time()-t0), self._pull_telemetry_rate/1000))
+        return True
 
     # --- IPs List --- #
     availableAddresses_changed = Signal()
@@ -687,6 +732,7 @@ class RobotNetwork(QObject):
 
 class ConnectionStatus(str, Enum):
     CONNECTED = 'Connected'
+    PING = 'Pinging'
     AUTH = 'Authenticating'
     CHECK_AVAILABLE = 'Check Available'
     WAIT_AVAILABLE = 'Wait Available'

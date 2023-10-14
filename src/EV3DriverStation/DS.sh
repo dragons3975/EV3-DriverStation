@@ -3,9 +3,6 @@
 # Update lock timecode
 touch /run/user/1000/robot.lock
 
-# Read jar last modified time
-# jar_time=`cat version.txt 2>/dev/null`
-
 # Read CPU load average in the last 15s with uptime
 load=`uptime | sed -e 's/.*load average: //' | cut -d, -f1`
 
