@@ -20,6 +20,7 @@ Rectangle {
 
     property bool controllerEnabled: true
     property int pilotId: 0
+    property var joystickState: controllers.states[pilotId]
     property bool isKeyboard: false
 
     component ButtonHighlight: Rectangle {
@@ -35,7 +36,7 @@ Rectangle {
         ToolTip.visible: buttonName ? maButton.containsMouse : false
         ToolTip.text: buttonName + ( (isKeyboard && shortcut !== "") ? "  [<i>" + shortcut + "</i>]" : "") 
 
-        opacity: controllers.states[pilotId][buttonName] ? 1 : .05
+        opacity: joystickState[buttonName] ? 1 : .05
 
         MouseArea {
             id: maButton
@@ -52,7 +53,7 @@ Rectangle {
         colorization: 1.0
         colorizationColor: Material.accentColor
 
-        opacity: controllers.states[pilotId][buttonName] ? 1 : .05
+        opacity: joystickState[buttonName] ? 1 : .05
 
         ToolTip.visible: buttonName ? maSvg.containsMouse : false
         ToolTip.text: buttonName + ( (isKeyboard && shortcut !== "") ? "  [<i>" + shortcut + "</i>]" : "") 
@@ -170,7 +171,7 @@ Rectangle {
         buttonName: 'Left Joystick'
         shortcut: '← / → / ↑ / ↓ '
 
-        opacity: controllers.states[pilotId]['leftX']**2 + controllers.states[pilotId]['leftY']**2 > 0.1 ? 1 : .05
+        opacity: joystickState['leftX']**2 + joystickState['leftY']**2 > 0.1 ? 1 : .05
         radius: 12.5
         color: Material.primaryColor
         x: 70; y: 30
@@ -182,7 +183,7 @@ Rectangle {
         shortcut: 'X'
 
         opacity: 1
-        color: controllers.states[pilotId]['LeftStick'] ? Material.accentColor : Material.backgroundColor
+        color: joystickState['LeftStick'] ? Material.accentColor : Material.backgroundColor
 
         radius: 8
         x: 74; y: 34
@@ -193,7 +194,7 @@ Rectangle {
         buttonName: 'Right Joystick'
         shortcut: 'W / A / S / D'
 
-        opacity: controllers.states[pilotId]['rightX']**2 + controllers.states[pilotId]['rightY']**2 > 0.1 ? 1 : .05
+        opacity: joystickState['rightX']**2 + joystickState['rightY']**2 > 0.1 ? 1 : .05
         radius: 12.5
         color: Material.primaryColor
         x: 161; y: 66
@@ -205,7 +206,7 @@ Rectangle {
         shortcut: 'M'
 
         opacity: 1
-        color: controllers.states[pilotId]['RightStick'] ? Material.accentColor : Material.backgroundColor
+        color: joystickState['RightStick'] ? Material.accentColor : Material.backgroundColor
         
         radius: 8
         x: 165; y: 70
@@ -257,7 +258,7 @@ Rectangle {
         shortcut: 'Z'
 
         colorizationColor: Material.primaryColor
-        opacity: controllers.states[pilotId]['leftTrigger'] > -0.9 ? 1 : .05
+        opacity: joystickState['leftTrigger'] > -0.9 ? 1 : .05
         x: 10; y: 24
     }
 
@@ -275,7 +276,7 @@ Rectangle {
         shortcut: 'C'
 
         colorizationColor: Material.primaryColor
-        opacity: controllers.states[pilotId]['rightTrigger'] > -0.9 ? 1 : .05
+        opacity: joystickState['rightTrigger'] > -0.9 ? 1 : .05
         x: 274; y: 24
     }
 
@@ -317,7 +318,7 @@ Rectangle {
             ColoredLabel {
                 Layout.maximumWidth: 50
                 Layout.minimumWidth: 50
-                text: formatAxisValue(controllers.states[pilotId]['leftX'])
+                text: formatAxisValue(joystickState['leftX'])
             }
 
             Rectangle {
@@ -334,7 +335,7 @@ Rectangle {
             ColoredLabel {
                 Layout.maximumWidth: 50
                 Layout.minimumWidth: 50
-                text: formatAxisValue(controllers.states[pilotId]['rightX'])
+                text: formatAxisValue(joystickState['rightX'])
             }
 
             ColoredLabel {
@@ -342,14 +343,14 @@ Rectangle {
                 text: 'Left Y'
             }
             ColoredLabel {
-                text: formatAxisValue(controllers.states[pilotId]['leftY'])
+                text: formatAxisValue(joystickState['leftY'])
             }
 
             ColoredLabel {
                 text: 'Right Y'
             }
             ColoredLabel {
-                text: formatAxisValue(controllers.states[pilotId]['rightY'])
+                text: formatAxisValue(joystickState['rightY'])
             }
 
             ColoredLabel {
@@ -357,7 +358,7 @@ Rectangle {
             }
 
             ColoredLabel {
-                text: formatAxisValue(controllers.states[pilotId]['leftTrigger'])
+                text: formatAxisValue(joystickState['leftTrigger'])
             }
 
             ColoredLabel {
@@ -365,7 +366,7 @@ Rectangle {
             }
 
             ColoredLabel {
-                text: formatAxisValue(controllers.states[pilotId]['rightTrigger'])
+                text: formatAxisValue(joystickState['rightTrigger'])
             }
         }
     }

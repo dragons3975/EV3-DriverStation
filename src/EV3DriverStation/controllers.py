@@ -17,7 +17,9 @@ class ControllersManager(QObject):
         self._pilot1ControllerId = None
         self._pilot2ControllerId = None
         self._pilot1State = ControllerState()
+        self._pilot1StateDict = None
         self._pilot2State = ControllerState()
+        self._pilot2StateDict = None
 
         self.list_refresh_timer = QTimer(self)
         self.list_refresh_timer.timeout.connect(self.refresh_controllers_list)
@@ -27,6 +29,7 @@ class ControllersManager(QObject):
 
         self._list_refresh_rate = list_refresh_rate
         self._states = None
+        self._states_dirty = False
 
     def init_pygame(self):
         pygame.init()
@@ -118,13 +121,13 @@ class ControllersManager(QObject):
 
         pygame.event.pump()
         if p1 is not None:
-            self._pilot1State = self.pilot1Controller.get_state(pump_event=False)
+            p1State = p1.get_state(pump_event=False)
+            if p1State != p1LastState:
+                self._setPilot1State(p1State)
         if p2 is not None:
-            self._pilot2State = self.pilot2Controller.get_state(pump_event=False)
-
-        if self._pilot1State != p1LastState or self._pilot2State != p2LastState:
-            self._states = None
-            self.statesChanged.emit()
+            p2State = p2.get_state(pump_event=False)
+            if p2State != p2LastState:
+                self._setPilot2State(p2State)
         
         self.state_refresh_timer.start()
 
@@ -210,18 +213,35 @@ class ControllersManager(QObject):
         return [j.name for j in self.controllers]
 
     # --- Controllers states --- #
-    statesChanged = Signal()
-    @Property(list, notify=statesChanged)
-    def states(self):
-        if self._states is None:
-            self._states = [s.as_dict() for s in self.get_pilot_controllers_states()]
-        return self._states
+    pilot1StateChanged = Signal()
+    @Property(dict, notify=pilot1StateChanged)
+    def pilot1State(self):
+        if self._pilot1StateDict is None:
+            self._pilot1StateDict = self._pilot1State.as_dict()
+        return self._pilot1StateDict
 
-    @Property(bool, notify=statesChanged)
+    def _setPilot1State(self, state: ControllerState):
+        self._pilot1State = state
+        self._pilot1StateDict = None
+        self.pilot1StateChanged.emit()
+
+    pilot2StateChanged = Signal()
+    @Property(dict, notify=pilot2StateChanged)
+    def pilot2State(self):
+        if self._pilot2StateDict is None:
+            self._pilot2StateDict = self._pilot2State.as_dict()
+        return self._pilot2StateDict
+
+    def _setPilot2State(self, state: ControllerState):
+        self._pilot2State = state
+        self._pilot2StateDict = None
+        self.pilot2StateChanged.emit()
+
+    @Property(bool, notify=pilot1StateChanged)
     def isPilot1ControllerActive(self):
         return not self._pilot1State.is_neutral()
 
-    @Property(bool, notify=statesChanged)
+    @Property(bool, notify=pilot2StateChanged)
     def isPilot2ControllerActive(self):
         return not self._pilot2State.is_neutral()
 
