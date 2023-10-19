@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 dependencies = [
-    "pygame", "PySide6", "pyinstaller", "icmplib", "fabric"
+    "pygame", "PySide6", "pyinstaller", "icmplib", "fabric", "pyyaml"
 ]
 dynamic = ["version"]
 
@@ -41,8 +41,8 @@ target-version = "py310"
 line-length = 120
 
 [tool.ruff.isort]
-known-first-party = ["fundus_vessels_toolkit"]
-section-order = ["future", "standard-library", "third-party", "steered_cnn", "first-party", "local-folder"]
+known-first-party = ["EV3DriverStation"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 
 [tool.ruff.isort.sections]
 "steered_cnn" = ["steered_cnn"]

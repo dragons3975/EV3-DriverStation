@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import time
-from datetime import datetime
-from enum import Enum
+import struct
 
-# from networktables import NetworkTables
+import yaml
 from PySide6.QtCore import Property, QObject, Signal, Slot
+
+from .utils import AverageOverTime
 
 
 class Telemetry(QObject):
@@ -15,30 +15,25 @@ class Telemetry(QObject):
         self._aux_voltage = 0
         self._ev3_current = 0
         self._cpu_load = 0
+        self._avg_skipped_frames = AverageOverTime(5)
+        self._avg_frame_exec_time = AverageOverTime(5)
 
         self._telemetry_data = {}
-        self._freeze_telemetry = False
-        self._telemetry_status = TelemetryStatus.UNAVAILABLE
-        self._last_telemetry_t = None
-        self._telemetry_avg_dt = 0
 
-        # self._network_tables = None
-        # self._nt_refresh_rate = network_tables_refresh_rate
-        # self._nt_status_timer = QTimer()
-        # self._nt_status_timer.setInterval(self._nt_refresh_rate)
-        # self._nt_status_timer.timeout.connect(self._refresh_telemetry_status)
-    
+        
     @Slot()
-    def clear_and_disconnect(self):
+    def clear(self):
         self.set_ev3_voltage(0)
         self.set_ev3_current(0)
         self.set_cpu_load(0)
-        self.set_telemetry_data(None)
+        self.clear_program_data()
 
-        self._telemetry_avg_dt = None
-        self._last_telemetry_t = 0
-
-        # self.disconnect_network_tables()
+    def clear_program_data(self):
+        self.set_telemetry_data({})
+        self._avg_skipped_frames.clear()
+        self._avg_frame_exec_time.clear()
+        self.skippedFrames_changed.emit(0)
+        self.frameExecTime_changed.emit(0)
 
 
     def refresh_robot_status(self, status: dict[str, str]):
@@ -55,48 +50,45 @@ class Telemetry(QObject):
             elif code == 'L':
                 self.set_cpu_load(float(content))
 
-    #====================#
-    #== Network Tables ==#
-    #====================#
-    # @Slot(str)
-    # def connect_network_tables(self, ip: str):
-    #    if self._network_tables is not None:
-    #        self.disconnect_network_tables()
-    #    self._network_tables = NetworkTables.initialize(server=ip)
-    #    self._network_tables.setUpdateRate(self._nt_refresh_rate)
-    #    self._network_tables.addEntryListener(self._network_tables_listener, 
-    #                                          immediateNotify=True,
-    #                                          paramIsNew=False)
-    #    self._nt_status_timer.start()
+    def parse_udp_response(self, telemetry_data):
+        """
+        Parse the UDP response from the robot and update the telemetry data.
+        """
+        if telemetry_data[0] == 255:
+            if len(telemetry_data) > 1:
+                telemetry_data = telemetry_data[1:].decode('ascii')
+                data = yaml.safe_load(telemetry_data)
+                if data is not None:
+                    self.set_telemetry_data(data)
+            else:
+                self.set_telemetry_data({})
+        else:
+            try:
+                var_names  = list(self._telemetry_data.keys())
+                telemetry_data = list(telemetry_data)
+                while len(telemetry_data) > 0:
+                    varID = telemetry_data.pop(0)
+                    varName = var_names[varID]
+                    var = self._telemetry_data[varName]
+                    if isinstance(var, bool):
+                        var = telemetry_data.pop(0) != 0
+                    elif isinstance(var, int):
+                        var = struct.unpack('h', bytes(telemetry_data[:2]))[0]
+                        del telemetry_data[:2]
+                    elif isinstance(var, float):
+                        var = struct.unpack('f', bytes(telemetry_data[:4]))[0]
+                        del telemetry_data[:4]
+                    elif isinstance(var, str):
+                        size = int(telemetry_data.pop(0))
+                        var = bytes(telemetry_data[:size]).decode('ascii')
+                        del telemetry_data[:size]
+                    self._telemetry_data[varName] = var
+            except Exception:
+                return False
 
-    #@Slot()
-    #def disconnect_network_tables(self):
-    #    self._network_tables.shutdown()
-    #    self._network_tables = None
-    #    self._nt_status_timer.stop()
+        self.telemetryData_changed.emit()
+        return True
 
-    # def _nt_listener(self, table, key, value, flag):
-    #    NotifyFlags = self._network_tables.NotifyFlags
-    #    match flag:
-    #        case NotifyFlags.UPDATE | NotifyFlags.NEW | NotifyFlags.IMMEDIATE | NotifyFlags.LOCAL:
-    #            self.add_telemetry_data(key, value)
-    #        case NotifyFlags.DELETE:
-    #            self.remove_telemetry_data(key)
-
-    # def _refresh_telemetry_status(self):
-    #    if self._network_tables is None:
-    #        return self.set_telemetry_status(TelemetryStatus.UNAVAILABLE)
-    #    NetworkModes = self._network_tables.NetworkMode
-    #    match self._network_tables.getNetworkMode():
-    #        case NetworkModes.NONE:
-    #            self.set_telemetry_status(TelemetryStatus.UNAVAILABLE)
-    #        case NetworkModes.FAILURE:
-    #            self.set_telemetry_status(TelemetryStatus.UNAVAILABLE)
-    #        case NetworkModes.STARTING:
-    #            self.set_telemetry_status(TelemetryStatus.CONNECTING)
-    #        case NetworkModes.CLIENT:
-    #            self.set_telemetry_status(TelemetryStatus.CONNECTED)
-        
 
     #====================#
     #== QML PROPERTIES ==#
@@ -145,55 +137,26 @@ class Telemetry(QObject):
             self._cpu_load = cpu
             self.cpu_changed.emit(self._cpu_load)
 
-    # --- Telemetry status --- #
-    telemetryStatus_changed = Signal(str)
-    @Property(str, notify=telemetryStatus_changed)
-    def telemetryStatus(self) -> TelemetryStatus:
-        return self._telemetry_status
+    # --- Skipped frames --- #
+    skippedFrames_changed = Signal(float)
+    @Property(float, notify=skippedFrames_changed)
+    def skippedFrames(self) -> float:
+        return self._avg_skipped_frames.get(-1)
 
-    def set_telemetry_status(self, status: TelemetryStatus):
-        if status != self._telemetry_status:
-            self._telemetry_status = status
-            self.telemetryStatus_changed.emit(status)
+    def put_skipped_frame(self, skipped: float):
+        self._avg_skipped_frames.put(skipped)
+        self.skippedFrames_changed.emit(self._avg_skipped_frames.get())
 
-    # --- Freeze telemetry --- #
-    freezeTelemetry_changed = Signal(bool)
-    @Property(bool, notify=freezeTelemetry_changed)
-    def freezeTelemetry(self) -> bool:
-        return self._freeze_telemetry
+    # --- Frame execution time --- #
+    frameExecTime_changed = Signal(float)
+    @Property(float, notify=frameExecTime_changed)
+    def frameExecTime(self) -> float:
+        return self._avg_frame_exec_time.get(-1)
 
-    @freezeTelemetry.setter
-    def freezeTelemetry(self, freeze: bool):
-        if freeze != self._freeze_telemetry:
-            self._freeze_telemetry = freeze
-            self.freezeTelemetry_changed.emit(freeze)
+    def put_frame_exec_time(self, exec_time: float):
+        self._avg_frame_exec_time.put(exec_time)
+        self.frameExecTime_changed.emit(self._avg_frame_exec_time.get())
 
-            self._telemetry_avg_dt = 0
-            self._last_telemetry_t = None
-            self.telemetryAvgDt_changed.emit(0)
-            
-
-    # --- Telemetry average dt --- #
-    telemetryAvgDt_changed = Signal(float)
-    @Property(float, notify=telemetryAvgDt_changed)
-    def udpAvgDt(self) -> float:
-        return self._telemetry_avg_dt
-
-    def tick_telemetry_avg_dt(self) -> None:
-        last_udp_t = self._last_telemetry_t
-        t = time.time()
-        self._last_telemetry_t = t
-
-        if last_udp_t is None:
-            return
-
-        last_dt = (t-last_udp_t) * 1000
-        if self._telemetry_avg_dt==0 or abs(last_dt-self._telemetry_avg_dt) > 1000:
-            self._telemetry_avg_dt = last_dt
-        else:
-            self._telemetry_avg_dt = self._telemetry_avg_dt * 0.8 + last_dt * 0.2
-        self.telemetryAvgDt_changed.emit(self._telemetry_avg_dt)
-    
     # --- Telemetry data --- #
     telemetryData_changed = Signal()
     @Property(list, notify=telemetryData_changed)
@@ -201,11 +164,6 @@ class Telemetry(QObject):
         return [{'key': k, 'value': v} for k, v in self._telemetry_data.items()]
 
     def set_telemetry_data(self, data: dict):
-        if data is None:
-            data = {}
-            self.set_telemetry_status(TelemetryStatus.UNAVAILABLE)
-        else:
-            self.set_telemetry_status(TelemetryStatus.CONNECTED)
         if data != self._telemetry_data:
             self._telemetry_data = data
             self.telemetryData_changed.emit()
@@ -219,8 +177,3 @@ class Telemetry(QObject):
         if key in self._telemetry_data:
             del self._telemetry_data[key]
             self.telemetryData_changed.emit()
-
-class TelemetryStatus(str, Enum):
-    UNAVAILABLE = "Unavailable"
-    CONNECTING = "Connecting"
-    CONNECTED = "Connected"

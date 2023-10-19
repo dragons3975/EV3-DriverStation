@@ -6,10 +6,6 @@ touch /run/user/1000/robot.lock
 # Read CPU load average in the last 15s with uptime
 load=`uptime | sed -e 's/.*load average: //' | cut -d, -f1`
 
-# Check if java is running
-javap=`pgrep java`
-[ -z "$javap" ] && echo "S0" || echo "S2"
-
 # Read battery voltage and current
 cd /sys/devices/platform/battery/power_supply/lego-ev3-battery
 voltage=`cat voltage_now`
