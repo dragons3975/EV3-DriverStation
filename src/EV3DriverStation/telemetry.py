@@ -161,7 +161,16 @@ class Telemetry(QObject):
     telemetryData_changed = Signal()
     @Property(list, notify=telemetryData_changed)
     def telemetryData(self) -> list:
-        return [{'key': k, 'value': v} for k, v in self._telemetry_data.items()]
+        return [{'key': k, 'value': Telemetry.formatValue(v)} for k, v in self._telemetry_data.items()]
+
+    @staticmethod
+    def formatValue(v):
+        if isinstance(v, float):
+            if abs(v) < 1e-15:
+                return "0.000"
+            return f'{v:.3f}' if 1e-3 < abs(v) < 1e3 else f'{v:.3e}'
+        else:
+            return str(v)
 
     def set_telemetry_data(self, data: dict):
         if data != self._telemetry_data:
