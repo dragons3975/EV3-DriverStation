@@ -27,6 +27,9 @@ UNIX_LINE_ENDING = b'\n'
 LOCK_PATH = "robot.lock"
 SCRIPT_CWD = "/run/user/1000/"
 
+PING_TIMEOUT = 5 # s before robot is considered disconnected
+UDP_RESPONSE_TIMEOUT = 6 # s before program is considered crashed
+
 class RobotNetwork(QObject):
     def __init__(self, robot: Robot, controllers: ControllersManager, telemetry: Telemetry, 
                  address: str | None = None, pull_telemetry_rate: int = 500):
@@ -73,7 +76,7 @@ class RobotNetwork(QObject):
         self._udp_response_watchdog = QTimer(self)
         self._udp_response_watchdog.setSingleShot(True)
         self._udp_response_watchdog.timeout.connect(self._udp_response_watchdog_timedout)
-        self._udp_response_watchdog.setInterval(3000)
+        self._udp_response_watchdog.setInterval(UDP_RESPONSE_TIMEOUT*1000)
         self.clearUdpResponseWatchdog.connect(self._udp_response_watchdog.stop)
         self._ask_full_telemetry = threading.Event()
 
@@ -512,7 +515,7 @@ class RobotNetwork(QObject):
         return strength > 0
 
     def get_signal_strength(self, host: str) -> bool:
-        ping_result = ping(host, count=3, interval=.1, timeout=1.5)
+        ping_result = ping(host, count=3, interval=.1, timeout=PING_TIMEOUT)
 
         if not ping_result.is_alive:
             strength = 0
