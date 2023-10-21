@@ -22,7 +22,7 @@ Rectangle {
         id: modeButton
         property string mode: ""
 
-        property bool currentMode: robot.mode === mode && robot.robotStatus !== "Idle"
+        property bool currentMode: robot.mode === mode && robot.programStatus === "Running"
         
         text: mode
         height: modeButtonHeight
@@ -136,6 +136,44 @@ Rectangle {
                         PropertyAnimation { to: 0.5; duration: 750 ; easing.type: Easing.InOutQuad }
                         PropertyAnimation { to: 1;   duration: 750 ; easing.type: Easing.InOutQuad }
                     }
+                }
+
+                Rectangle {
+                    visible: robot.programStatus === 'Starting'
+
+                    anchors.centerIn: parent
+                    width: parent.width - 40
+                    height: 30
+                    radius: 15
+
+                    color: Material.accentColor
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 60
+                        text: qsTr("Robot program is starting.")
+                        font.pixelSize: 15
+                        color: Material.foreground
+                    }
+
+                    SequentialAnimation on opacity {
+                        loops: Animation.Infinite
+                        running: true
+                        PropertyAnimation { to: 0.5; duration: 750 ; easing.type: Easing.InOutQuad }
+                        PropertyAnimation { to: 1;   duration: 750 ; easing.type: Easing.InOutQuad }
+                    }
+                }
+
+                Entry{
+                    visible: robot.programStatus === 'Running'
+                    name: qsTr("Program last Update:")
+                    value: robot.programLastUpdate
+                    isNA: telemetry.programLastUpdate === ""
+
+                    anchors.centerIn: parent
+                    height: 18
+                    width: parent.width - 40
                 }
             }
 
@@ -264,12 +302,6 @@ Rectangle {
 
             Header {
                 text: qsTr("Telemetry")
-
-                HeaderButton{
-                    source: telemetry.freezeTelemetry ? "assets/play.svg" : "assets/pause.svg"
-                    tooltip: telemetry.freezeTelemetry ? "Resume Telemetry" : "Pause Telemetry"
-                    onClicked: telemetry.freezeTelemetry = !telemetry.freezeTelemetry
-                }
             }
 
             // === Spacer ===
@@ -296,11 +328,10 @@ Rectangle {
                 Label{
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: -30
-                    visible: telemetry.telemetryStatus === "Unavailable"
+                    visible: telemetry.telemetryData.length === 0
                     text: {
-                        if (telemetry.telemetryStatus === "Connecting") return qsTr("Connecting to Telemetry...")
-                        else if (telemetry.freezeTelemetry) return qsTr("Telemetry refresh is paused.")
-                        else return qsTr("Telemetry is unavailable.")
+                        if (robot.programStatus !== "Running") return qsTr("Waiting for the robot program to start.")
+                        else return qsTr('  No telemetry data received.\n\nTo send data to the driver station use: \n  Telemetry.putNumber("name", value); \n  Telemetry.putData("name", "value");')
                     }
                 }
 
@@ -319,19 +350,32 @@ Rectangle {
             // === Robot Performance Stats ===
             GridLayout {
                 Layout.fillWidth: true
-                columns: 2
+                columns: 3
 
                 columnSpacing: 2
                 rowSpacing: 3
 
                 Entry {
+                    property bool ampere: telemetry.ev3Current > 1000
+                    tooltip: qsTr("Current drawn from the EV3 battery.")
+                    name: qsTr("EV3 Current:")
+                    value: ampere ? (telemetry.ev3Current/1000).toFixed(2) : telemetry.ev3Current.toFixed(0)
+                    suffix: ampere ? " A" : " mA"
+                    isNA: telemetry.ev3Current === 0
+                    alignValue: Text.AlignLeft
+
+                    Layout.fillWidth: true
+                }
+
+                Entry {
                     name: qsTr("EV3 Voltage:")
+                    tooltip: qsTr("Voltage of the EV3 battery.")
                     value: telemetry.ev3Voltage.toFixed(2)
                     suffix: " V"
                     isNA: telemetry.ev3Voltage === 0
                     color: {
-                        if (telemetry.ev3Voltage > 7.25) return Material.color(Material.LightGreen)
-                        else if (telemetry.ev3Voltage > 7) return Material.color(Material.Orange)
+                        if (telemetry.ev3Voltage > 7.5) return Material.color(Material.LightGreen)
+                        else if (telemetry.ev3Voltage > 7.2) return Material.color(Material.Orange)
                         else return Material.color(Material.Red)
                     }
                     alignValue: Text.AlignLeft
@@ -340,7 +384,8 @@ Rectangle {
                 }
 
                 Entry {
-                    name: qsTr("Auxilary Voltage:")
+                    name: qsTr("Aux. Voltage:")
+                    tooltip: qsTr("Voltage of the external 12V battery.")
                     value: telemetry.auxVoltage.toFixed(2)
                     suffix: " V"
                     isNA: telemetry.auxVoltage === 0
@@ -355,24 +400,13 @@ Rectangle {
                 }
 
                 Entry {
-                    property bool ampere: telemetry.ev3Current > 1000
-                    name: qsTr("EV3 Current:")
-                    value: ampere ? (telemetry.ev3Current/1000).toFixed(2) : telemetry.ev3Current.toFixed(0)
-                    suffix: ampere ? " A" : " mA"
-                    isNA: telemetry.ev3Current === 0
-                    alignValue: Text.AlignLeft
-
-                    Layout.fillWidth: true
-                }
-                
-                Entry {
-                    name: qsTr("CPU Load:")
-                    value: (telemetry.cpu*100).toFixed(0)
-                    suffix: "%"
-                    isNA: telemetry.cpu === 0
+                    name: qsTr("Skipped Frame:")
+                    tooltip: qsTr("Average number of frames skipped.")
+                    value: (telemetry.skippedFrames).toFixed(1)
+                    isNA: telemetry.skippedFrames === -1
                     color: {
-                        if (telemetry.cpu < 1) return Material.color(Material.LightGreen)
-                        if (telemetry.cpu < 1.5) return Material.color(Material.Orange)
+                        if (telemetry.skippedFrames < 1) return Material.color(Material.LightGreen)
+                        if (telemetry.skippedFrames < 4) return Material.color(Material.Orange)
                         else return Material.color(Material.Red)
                     }
                     alignValue: Text.AlignLeft
@@ -380,13 +414,34 @@ Rectangle {
                     Layout.fillWidth: true
                 }
 
-                Entry{
-                    Layout.columnSpan: 2
-                    name: qsTr("Program last Update:")
-                    value: robot.programLastUpdate
+                Entry {
+                    name: qsTr("Compute Time:")
+                    tooltip: qsTr("Average time to execute one frame.")
+                    value: (telemetry.frameExecTime).toFixed(0)
+                    suffix: "ms"
+                    isNA: telemetry.frameExecTime < 0
+                    color: {
+                        if (telemetry.frameExecTime < 40) return Material.color(Material.LightGreen)
+                        if (telemetry.frameExecTime < 100) return Material.color(Material.Orange)
+                        else return Material.color(Material.Red)
+                    }
                     alignValue: Text.AlignLeft
-                    isNA: telemetry.programLastUpdate === ""
-                    height: 15
+
+                    Layout.fillWidth: true
+                }
+                
+                Entry {
+                    name: qsTr("CPU Load:")
+                    tooltip: qsTr("Average CPU load during the last minute.")
+                    value: (telemetry.cpu*100).toFixed(0)
+                    suffix: "%"
+                    isNA: telemetry.cpu === 0
+                    color: {
+                        if (telemetry.cpu < 1.25) return Material.color(Material.LightGreen)
+                        if (telemetry.cpu < 2) return Material.color(Material.Orange)
+                        else return Material.color(Material.Red)
+                    }
+                    alignValue: Text.AlignLeft
 
                     Layout.fillWidth: true
                 }

@@ -48,7 +48,6 @@ Rectangle {
     MessageDialog {
         id: connectionFailedDialog
         property string reason: ""
-
         title: qsTr("Connection failed") + ": " + reason
 
         Component.onCompleted: network.connectionFailed.connect(setAndOpenFailed)
@@ -258,6 +257,7 @@ Rectangle {
                         value:{
                             switch(network.connectionStatus){
                                 case "Connected": return qsTr("Connected")
+                                case "Pinging": return qsTr("Pinging")
                                 case "Authenticating": return qsTr("Authenticating")
                                 case "Check Available": return qsTr("Check Available")
                                 case "Wait Available": return qsTr("Wait Available")

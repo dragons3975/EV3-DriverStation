@@ -205,6 +205,7 @@ Rectangle {
                 anchors.bottomMargin: 5
 
                 pilotId: 0
+                joystickState: controllers.pilot1State
                 controllerEnabled: controllers.pilot1ControllerId !== -1
                 isKeyboard: controllers.pilot1ControllerId === 0
             }
@@ -217,6 +218,7 @@ Rectangle {
                 anchors.topMargin: 5
 
                 pilotId: 1
+                joystickState: controllers.pilot2State
                 controllerEnabled: controllers.pilot2ControllerId !== -1
                 isKeyboard: controllers.pilot2ControllerId === 0
             }
