@@ -7,6 +7,8 @@ from time import time
 from PySide6.QtCore import Property, QObject, QSettings, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QKeyEvent
 
+MAX_TELEOP_TIME = 120
+MAX_AUTO_TIME = 60
 
 class Robot(QObject):
     def __init__(self, keyboard_controller):
@@ -96,6 +98,8 @@ class Robot(QObject):
 
         # Start/stop timer
         if status == RobotStatus.ENABLED:
+            if self.auto_disable and self.mode == RobotMode.TELEOP and self.time >= MAX_TELEOP_TIME:
+                self.reset_timer()
             self.start_timer()
         else:
             self.stop_timer()
@@ -156,11 +160,11 @@ class Robot(QObject):
         # Auto disable robot after 60 seconds in auto and 120 seconds in teleop
         if self.auto_disable:
             time = self.time
-            if self.mode == RobotMode.AUTO and time >= 60:
+            if self.mode == RobotMode.AUTO and time >= MAX_AUTO_TIME:
                 self.enabled = False
-            elif self.mode == RobotMode.TELEOP and time >= 120:
+            elif self.mode == RobotMode.TELEOP and time >= MAX_TELEOP_TIME:
                 self.enabled = False
-                self._time = 120
+                self._time = MAX_TELEOP_TIME
 
     # --- Program date --- #
     programLastUpdate_changed = Signal(str)
@@ -220,6 +224,14 @@ class RobotMode(str, Enum):
     AUTO = 'Autonomous'
     TELEOP = 'Teleoperated'
     TEST = 'Test'
+
+    @staticmethod
+    def from_index(index: int) -> RobotMode:
+        return {
+            1: RobotMode.AUTO,
+            2: RobotMode.TELEOP,
+            3: RobotMode.TEST
+        }[index]
 
 
 class RobotStatus(str, Enum):

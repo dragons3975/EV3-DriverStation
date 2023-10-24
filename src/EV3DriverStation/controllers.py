@@ -277,6 +277,29 @@ class ControllerState(NamedTuple):
     def buttons(self) -> tuple[bool, ...]:
         return self[6:]
 
+    def buttons_as_int(self) -> int:
+        b = 0
+        b |= self.A << 0
+        b |= self.B << 1
+        b |= self.X << 2
+        b |= self.Y << 3
+
+        b |= self.LeftBumper << 4
+        b |= self.RightBumper << 5
+        b |= self.Back << 6
+        b |= self.Start << 7
+
+        b |= self.LeftStick << 9
+        b |= self.RightStick << 10
+
+        b |= self.Left << 16
+        b |= self.Right << 17
+        b |= self.Up << 18
+        b |= self.Down << 19
+
+        return b
+
+
     def is_neutral(self) -> bool:
         return self == ControllerState()
 
@@ -296,6 +319,7 @@ class ControllerState(NamedTuple):
 
     def as_dict(self) -> dict[str, float | bool]:
         return self._asdict()
+
 
 class Controller:
     def __init__(self, joystick: pygame.joystick.Joystick):

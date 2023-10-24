@@ -13,6 +13,7 @@ Item {
     property bool isNA: false
     property bool editable: false
     property bool hovered: mouseArea.containsMouse
+    property string tooltip: ""
 
     property color color: Material.foreground
     property color disabledColor: Material.color(Material.Grey, Material.Shade500)
@@ -37,10 +38,11 @@ Item {
         }
     }
 
+
+
     Label {
         id: keyLabel
         anchors.left: parent.left
-        anchors.right: parent.horizontalCenter
         anchors.leftMargin: 10
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
@@ -56,7 +58,7 @@ Item {
         id: valueLabel
         anchors.left: parent.horizontalCenter
         anchors.right: parent.right
-        anchors.leftMargin: 10
+        anchors.leftMargin: 20
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
 
@@ -80,6 +82,8 @@ Item {
             root.clicked()
         }
         hoverEnabled: true
+        ToolTip.visible: tooltip ? hovered : false
+        ToolTip.text: tooltip 
     }
 
 }
