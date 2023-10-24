@@ -10,8 +10,7 @@ class RobotAPI:
         self.robot = Robot(self.controllers.keyboard_controller)   
         self.telemetry = Telemetry() 
         print("Connecting to robot")
-        self.network = RobotNetwork(self.robot, self.controllers, self.telemetry, address=ip, 
-                                    pull_telemetry_rate=refresh_udp*2)
+        self.network = RobotNetwork(self.robot, self.controllers, self.telemetry, address=ip)
         while self.network.connectionStatus != "Connected":
             sleep(.1)
             if self.network.connectionStatus == "Disconected":

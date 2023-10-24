@@ -34,7 +34,7 @@ UDP_RESPONSE_TIMEOUT = 6 # s before program is considered crashed
 
 class RobotNetwork(QObject):
     def __init__(self, robot: Robot, controllers: ControllersManager, telemetry: Telemetry, 
-                 address: str | None = None, pull_telemetry_rate: int = 500):
+                 address: str | None = None):
         super().__init__()
         self.robot = robot
         self.controllers = controllers
@@ -53,7 +53,6 @@ class RobotNetwork(QObject):
         # SSH Communication
         self._ssh_thread: threading.Thread = None
         self._ssh: SSHConnection = None
-        self._pull_telemetry_rate = pull_telemetry_rate
         self._request_program_date = threading.Event()
         
         self.connectionFailed.connect(self.disconnectRobot)
@@ -722,21 +721,6 @@ class RobotNetwork(QObject):
                 self._min_udp_refresh_timer.start(max(minRate-dt, 0))
             else:
                 self._min_udp_refresh_timer.stop()
-
-    # --- Pull Telemetry Rate --- #
-    pullTelemetryRate_changed = Signal(int)
-    @Property(int, notify=pullTelemetryRate_changed)
-    def pullTelemetryRate(self) -> int:
-        return self._pull_telemetry_rate
-
-    @pullTelemetryRate.setter
-    def pullTelemetryRate(self, value: int):
-        t = int(round(value))
-        if t == self._pull_telemetry_rate:
-            return
-
-        self._pull_telemetry_rate = t
-        self.pullTelemetryRate_changed.emit(t)
 
     # --- Mute UDP Refresh --- #
     muteUdpRefresh_changed = Signal(bool)

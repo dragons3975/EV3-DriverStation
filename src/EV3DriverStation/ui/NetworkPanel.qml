@@ -264,7 +264,18 @@ Rectangle {
                                 case "Setuping": return qsTr("Setuping")
                                 case "Disconnected": return qsTr("Disconnected")
                             }
-                        } 
+                        }
+                        tooltip:{
+                            switch(network.connectionStatus){
+                                case "Connected": return qsTr("Connected to the robot.")
+                                case "Pinging": return qsTr("Testing if a device exists at the given IP address.")
+                                case "Authenticating": return qsTr("Establishing a ssh connection to the robot.")
+                                case "Check Available": return qsTr("Checking if no other DriverStation is currently connected to the robot.")
+                                case "Wait Available": return qsTr("Waiting for other DriverStation to disconnect from the robot (10s).")
+                                case "Setuping": return qsTr("Preparing the robot for communication with the DriverStation.")
+                                case "Disconnected": return qsTr("Disconnected from the robot.")
+                            }
+                        }
                     }
 
                     Entry {
@@ -276,6 +287,7 @@ Rectangle {
 
                     Entry {
                         name: qsTr("Average time between UDP sends")
+                        tooltip: qsTr("Time between two messages sent to the robot. If he robot doesn't skip messages, this is the time between two refresh of the robot state.")
                         value: network.udpAvgDt
                         isNA: network.udpAvgDt===0
                         suffix: " ms"
@@ -310,17 +322,6 @@ Rectangle {
                         onValueModified: (value) => {network.minUdpRefreshRate = value}
                         editable: network.connectionStatus=="Connected" && !telemetry.freezeTelemetry
                         enabled: editable && value < network.maxUdpRefreshRate && value > 0 
-                    }
-
-                    NetworkOption {
-                        name: qsTr("Telemetry pull rate (ms)")
-                        value: network.pullTelemetryRate
-                        minValue: 50 
-                        maxValue: 1000
-                        stepSize: 100
-                        onValueModified: (value) => {network.pullTelemetryRate = value}
-                        editable: network.connectionStatus=="Connected" && !telemetry.freezeTelemetry
-                        enabled: editable
                     }
 
                 }
