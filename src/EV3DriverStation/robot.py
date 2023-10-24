@@ -23,6 +23,7 @@ class Robot(QObject):
 
         self._keyboard_controller = keyboard_controller
         self.capture_keyboard = False
+        self._capture_keyboard_ref_counter = 0
 
         self.timer = QTimer()
         self.timer.setInterval(30)
@@ -193,6 +194,15 @@ class Robot(QObject):
             self._program_last_update = date 
             self.programLastUpdate_changed.emit(self._program_last_update)
 
+    # --- Keyboard --- #
+    @Slot()
+    def lockKeyboard(self):
+        self._capture_keyboard_ref_counter += 1
+
+    @Slot()
+    def releaseKeyboard(self):
+        self._capture_keyboard_ref_counter -= 1
+
     #====================#
 
     @Slot(QObject)
@@ -200,7 +210,7 @@ class Robot(QObject):
         obj.installEventFilter(self)
 
     def eventFilter(self, source: QObject, event):
-        if not self.capture_keyboard:
+        if not self.capture_keyboard or self._capture_keyboard_ref_counter > 0:
             return False
 
         if event.type() in (QKeyEvent.KeyPress, QKeyEvent.KeyRelease):

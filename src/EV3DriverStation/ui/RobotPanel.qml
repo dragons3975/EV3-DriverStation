@@ -321,14 +321,20 @@ Rectangle {
 
                 delegate: Entry {
                     width: telemetryList.width
-                    name: modelData.key
-                    value: modelData.value
+                    name: modelData.name
+                    value: modelData.formattedValue
+                    valueType: modelData.valueType
+                    editable: modelData.editable
+                    onValueEdited: (v) => {
+                        if(!modelData.setValue(v))
+                            invalidValue()
+                    }
                 }
 
                 Label{
                     anchors.centerIn: parent
                     anchors.verticalCenterOffset: -30
-                    visible: telemetry.telemetryData.length === 0
+                    visible: telemetry.telemetryTransmitted && telemetry.telemetryData.length === 0 
                     text: {
                         if (robot.programStatus !== "Running") return qsTr("Waiting for the robot program to start.")
                         else return qsTr('  No telemetry data received.\n\nTo send data to the driver station use: \n  Telemetry.putNumber("name", value); \n  Telemetry.putData("name", "value");')

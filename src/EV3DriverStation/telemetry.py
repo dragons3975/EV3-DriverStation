@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import struct
 import threading
+import traceback
 from enum import Enum
 
 import yaml
@@ -20,7 +21,9 @@ class Telemetry(QObject):
         self._avg_skipped_frames = AverageOverTime(5)
         self._avg_frame_exec_time = AverageOverTime(5)
 
-        self._telemetry_data = {}
+        self._telemetry_data = []
+        self._telemetry_transmitted = False
+        self.newTelemetryData.connect(self.parse_new_telemetry_data)
 
         
     @Slot()
@@ -31,7 +34,8 @@ class Telemetry(QObject):
         self.clear_program_data()
 
     def clear_program_data(self):
-        self.set_telemetry_data({})
+        self.set_telemetry_data([])
+        self.set_telemetry_transmitted(False)
         self._avg_skipped_frames.clear()
         self._avg_frame_exec_time.clear()
         self.skippedFrames_changed.emit(0)
@@ -58,38 +62,33 @@ class Telemetry(QObject):
         """
         if telemetry_data[0] == 255:
             if len(telemetry_data) > 1:
-                telemetry_data = telemetry_data[1:].decode('ascii')
-                data = yaml.safe_load(telemetry_data)
-                if data is not None:
-                    self.set_telemetry_data(data)
+                telemetry_data_str = telemetry_data[1:].decode('ascii')
             else:
-                self.set_telemetry_data({})
+                telemetry_data_str = ''
+            self.newTelemetryData.emit(telemetry_data_str) # Use signal to avoid threading issues
         else:
             try:
-                var_names  = list(self._telemetry_data.keys())
-                telemetry_data = list(telemetry_data)
-                while len(telemetry_data) > 0:
+                telemetry_data = bytearray(telemetry_data)
+                while len(telemetry_data) > 0 and telemetry_data[0] < 255:
                     varID = telemetry_data.pop(0)
-                    varName = var_names[varID]
-                    var = self._telemetry_data[varName]
-                    if isinstance(var, bool):
-                        var = telemetry_data.pop(0) != 0
-                    elif isinstance(var, int):
-                        var = struct.unpack('h', bytes(telemetry_data[:2]))[0]
-                        del telemetry_data[:2]
-                    elif isinstance(var, float):
-                        var = struct.unpack('f', bytes(telemetry_data[:4]))[0]
-                        del telemetry_data[:4]
-                    elif isinstance(var, str):
-                        size = int(telemetry_data.pop(0))
-                        var = bytes(telemetry_data[:size]).decode('ascii')
-                        del telemetry_data[:size]
-                    self._telemetry_data[varName] = var
+                    telemetry_data = self._telemetry_data[varID].from_bytes(telemetry_data)
             except Exception:
+                print("Error while parsing UDP telemetry data")
+                traceback.print_exc()
                 return False
-
         self.telemetryData_changed.emit()
         return True
+
+    def generate_udp_telemetry_update(self) -> bytes:
+        """
+        Generate the UDP telemetry update packet to send to the robot.
+        """
+        packet = bytearray()
+        for i, var in enumerate(self._telemetry_data):
+            if var.editable and var.check_changed():
+                packet.append(i)
+                packet.extend(var.to_bytes())
+        return bytes(packet)
 
 
     #====================#
@@ -161,83 +160,142 @@ class Telemetry(QObject):
 
     # --- Telemetry data --- #
     telemetryData_changed = Signal()
-    @Property(list, notify=telemetryData_changed)
+    @Property("QVariantList", notify=telemetryData_changed)
     def telemetryData(self) -> list:
-        return [{'key': k, 'value': Telemetry.formatValue(v)} for k, v in self._telemetry_data.items()]
+        return self._telemetry_data
 
-    @staticmethod
-    def formatValue(v):
-        if isinstance(v, float):
-            if abs(v) < 1e-15:
-                return "0.000"
-            return f'{v:.3f}' if 1e-3 < abs(v) < 1e3 else f'{v:.3e}'
+    def set_telemetry_data(self, data: list[TelemetryVariable]):
+        self._telemetry_data = data
+        self.telemetryData_changed.emit()
+        self.set_telemetry_transmitted(True)
+
+    newTelemetryData = Signal(str)
+    @Slot(str)
+    def parse_new_telemetry_data(self, telemetry_data: str):
+        if len(telemetry_data) > 0:
+            data = yaml.safe_load(telemetry_data)
+            if data is not None:
+                telemetry_data = []
+                for name, value in data.items():
+                    editable = name.startswith('?')
+                    if editable:
+                        name = name[1:]
+                    telemetry_data.append(TelemetryVariable(name, editable, value))
+                self.set_telemetry_data(telemetry_data)
+
         else:
-            return str(v)
+            self.set_telemetry_data([])
 
-    def set_telemetry_data(self, data: dict):
-        if data != self._telemetry_data:
-            self._telemetry_data = data
-            self.telemetryData_changed.emit()
+    # --- Telemetry unknown --- #
+    telemetryTransmitted_changed = Signal(bool)
+    @Property(bool, notify=telemetryTransmitted_changed)
+    def telemetryTransmitted(self) -> bool:
+        return self._telemetry_transmitted
 
-    def add_telemetry_data(self, key, value):
-        if key not in self._telemetry_data or self._telemetry_data[key] != value:
-            self._telemetry_data[key] = value
-            self.telemetryData_changed.emit()
-    
-    def remove_telemetry_data(self, key):
-        if key in self._telemetry_data:
-            del self._telemetry_data[key]
-            self.telemetryData_changed.emit()
+    def set_telemetry_transmitted(self, unknown: bool):
+        if unknown != self._telemetry_transmitted:
+            self._telemetry_transmitted = unknown
+            self.telemetryTransmitted_changed.emit(self._telemetry_transmitted)
 
 
 class TelemetryVariable(QObject):
     def __init__(self, name: str, editable: bool, value: bool|int|float|str):
+        super().__init__()
         self._name = name
         self._editable = editable
         self._value = value
         self._type = TelemetryVarType.from_value(value)
         self._changedFlag = threading.Event()
 
+    def __repr__(self):
+        return f"TelemetryVariable({self.name}, {self._type}, {self.value})"
+
     def check_changed(self):
         if self._changedFlag.is_set():
             self._changedFlag.clear()
             return True
         return False
-
-    def set_value(self, value: bool|int|float|str):
-        if not self.editable:
-            raise ValueError("Cannot change value of non-editable telemetry variable")
-
-        if self.type != TelemetryVarType.from_value(value):
-            raise ValueError(f"Invalid type {type(value)} for telemetry variable")
-
-        if value != self.value:
-            self.value = value
-            self._changedFlag.set()
     
-    def from_bytes_stream(self, stream: list[int]):
-        if self.type == TelemetryVarType.BOOL:
-            self.value = stream.pop(0) != 0
-        elif self.type == TelemetryVarType.INT:
-            self.value = struct.unpack('h', bytes(stream[:2]))[0]
-            del stream[:2]
-        elif self.type == TelemetryVarType.FLOAT:
-            self.value = struct.unpack('f', bytes(stream[:4]))[0]
-            del stream[:4]
-        elif self.type == TelemetryVarType.STRING:
-            size = int(stream.pop(0))
-            self.value = bytes(stream[:size]).decode('ascii')
-            del stream[:size]
+    def from_bytes(self, data: bytearray):
+        if self._type == TelemetryVarType.BOOL:
+            self._value = data.pop(0) != 0
+        elif self._type == TelemetryVarType.INT:
+            self._value = struct.unpack('h', data[:2])[0]
+            del data[:2]
+        elif self._type == TelemetryVarType.FLOAT:
+            self._value = struct.unpack('f', data[:4])[0]
+            del data[:4]
+        elif self._type == TelemetryVarType.STRING:
+            size = int(data.pop(0))
+            self._value = data[:size].decode('ascii')
+            del data[:size]
+        self.valueChanged.emit()
+        return data
 
     def to_bytes(self) -> bytes:
-        if self.type == TelemetryVarType.BOOL:
+        if self._type == TelemetryVarType.BOOL:
             return struct.pack('?', self.value)
-        elif self.type == TelemetryVarType.INT:
+        elif self._type == TelemetryVarType.INT:
             return struct.pack('h', self.value)
-        elif self.type == TelemetryVarType.FLOAT:
+        elif self._type == TelemetryVarType.FLOAT:
             return struct.pack('f', self.value)
-        elif self.type == TelemetryVarType.STRING:
+        elif self._type == TelemetryVarType.STRING:
             return struct.pack('B', len(self.value)) + self.value.encode('ascii')
+
+    #====================#
+    #== QML PROPERTIES ==#
+    #====================#
+
+    # --- Name --- #
+    @Property(str, constant=True)
+    def name(self) -> str:
+        return self._name
+
+    # --- Editable --- #
+    @Property(bool, constant=True)
+    def editable(self) -> bool:
+        return self._editable
+
+    # --- Type --- #
+    @Property(str, constant=True)
+    def valueType(self) -> str:
+        return self._type
+
+    # --- Value --- #
+    valueChanged = Signal()
+    @Property("QVariant", notify=valueChanged) 
+    def value(self) -> bool|int|float|str:
+        return self._value
+
+    @Property(str, notify=valueChanged)
+    def formattedValue(self) -> str:
+        if self._type == TelemetryVarType.BOOL:
+            return 'true' if self.value else 'false'
+        elif self._type == TelemetryVarType.INT:
+            return str(self.value)
+        elif self._type == TelemetryVarType.FLOAT:
+            if abs(self.value) < 1e-15:
+                return "0.000"
+            return f'{self.value:.3f}' if 1e-3 < abs(self.value) < 1e3 else f'{self.value:.3e}'
+        elif self._type == TelemetryVarType.STRING:
+            return self.value
+        return ""
+
+    @Slot("QVariant", result=bool)
+    def setValue(self, value: bool|int|float|str) -> bool:
+        if not self.editable:
+            return False
+        try:
+            value = TelemetryVarType.cast_to(value, self._type)
+        except ValueError:
+            return False
+        if value == self.value:
+            return False
+
+        self._value = value
+        self.valueChanged.emit()
+        self._changedFlag.set()
+        return True
         
 
 class TelemetryVarType(str, Enum):
@@ -258,3 +316,21 @@ class TelemetryVarType(str, Enum):
             return cls.STRING
         else:
             raise ValueError(f"Invalid type {type(v)} for telemetry variable")
+
+    @classmethod
+    def cast_to(cls, v, t: TelemetryVarType):
+        if t == cls.BOOL:
+            if isinstance(v, bool):
+                return v
+            elif isinstance(v, str):
+                return v.lower() in ("true", "1")
+            else:
+                return bool(v)
+        elif t == cls.INT:
+            return int(v)
+        elif t == cls.FLOAT:
+            return float(v)
+        elif t == cls.STRING:
+            return str(v)
+        else:
+            raise ValueError(f"Invalid type {t} for telemetry variable")

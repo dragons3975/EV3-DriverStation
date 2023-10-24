@@ -26,6 +26,7 @@ class GuiApp(QGuiApplication):
         self.telemetry = Telemetry()
         self.robot_network = RobotNetwork(self.robot, self.controllersManager, self.telemetry)
 
+        os.environ["QT_QUICK_CONTROLS_MATERIAL_VARIANT"] = "Dense"
         self.engine = QQmlApplicationEngine()
         self.ctx = self.engine.rootContext()
         QQuickStyle.setStyle('Material')

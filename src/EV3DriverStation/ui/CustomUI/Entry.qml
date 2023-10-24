@@ -7,13 +7,28 @@ Item {
 
     property alias name: keyLabel.text
     property string value: ""
+    property string valueType: "string"
     property alias alignValue: valueLabel.horizontalAlignment
     property string prefix: ""
     property string suffix: ""
     property bool isNA: false
-    property bool editable: false
     property bool hovered: mouseArea.containsMouse
     property string tooltip: ""
+
+    property bool editable: false
+    signal valueEdited(value: string) 
+    onValueChanged: {
+        if (editable){
+            if (valueType == "bool")
+                valueSwitch.checked = value == "true"
+            else
+                valueTextField.text = value
+        }
+    }
+    function invalidValue(){
+        if (editable)
+            valueTextField.text = value
+    }
 
     property color color: Material.foreground
     property color disabledColor: Material.color(Material.Grey, Material.Shade500)
@@ -22,6 +37,7 @@ Item {
 
     width: parent.width
     height: 20
+    
 
     Rectangle{
         id: background
@@ -56,6 +72,8 @@ Item {
 
     Label {
         id: valueLabel
+        visible: !editable
+
         anchors.left: parent.horizontalCenter
         anchors.right: parent.right
         anchors.leftMargin: 20
@@ -80,10 +98,64 @@ Item {
 
         onClicked: {
             root.clicked()
+            if (editable) {
+                if (valueType == "bool")
+                    valueSwitch.toggle()
+                else
+                    valueTextField.forceActiveFocus()
+            }
         }
         hoverEnabled: true
         ToolTip.visible: tooltip ? hovered : false
         ToolTip.text: tooltip 
+    }
+
+    TextField{
+        id: valueTextField
+        visible: editable && valueType != "bool"
+
+        onFocusChanged: {
+            if (focus)
+                robot.lockKeyboard()
+            else
+                robot.releaseKeyboard()
+        }
+
+        anchors.left: parent.horizontalCenter
+        anchors.right: parent.right
+        anchors.leftMargin: 20
+        anchors.rightMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
+        height: parent.height
+
+        font.pixelSize: parent.height * .6
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+
+        onEditingFinished: {
+            focus = false
+            root.valueEdited(text)
+        }
+
+        enabled: !isNA
+    }
+
+    CheckBox {
+        id: valueSwitch
+        visible: editable && valueType == "bool"
+
+        anchors.left: parent.horizontalCenter
+        anchors.right: parent.right
+        anchors.leftMargin: 20
+        anchors.rightMargin: 10
+        anchors.verticalCenter: parent.verticalCenter
+        height: parent.height
+        topPadding: 0
+        bottomPadding: 0
+
+        onCheckedChanged: {
+            root.valueEdited(checked)
+        }
     }
 
 }

@@ -121,6 +121,8 @@ class RobotNetwork(QObject):
                 axis_msg = struct.pack("b"*6, *[int(a*125) for a in state.axis])
                 message += axis_msg + struct.pack("i", state.buttons_as_int())
 
+            message += self.telemetry.generate_udp_telemetry_update()
+
         else:
             # If no program is running, send a hello message asking for the full telemetry
             message = b'\x88'
