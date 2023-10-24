@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import time
-from datetime import datetime
+import struct
+import threading
 from enum import Enum
 
 # from networktables import NetworkTables
@@ -220,7 +220,72 @@ class Telemetry(QObject):
             del self._telemetry_data[key]
             self.telemetryData_changed.emit()
 
-class TelemetryStatus(str, Enum):
-    UNAVAILABLE = "Unavailable"
-    CONNECTING = "Connecting"
-    CONNECTED = "Connected"
+
+class TelemetryVariable(QObject):
+    def __init__(self, name: str, editable: bool, value: bool|int|float|str):
+        self._name = name
+        self._editable = editable
+        self._value = value
+        self._type = TelemetryVarType.from_value(value)
+        self._changedFlag = threading.Event()
+
+    def check_changed(self):
+        if self._changedFlag.is_set():
+            self._changedFlag.clear()
+            return True
+        return False
+
+    def set_value(self, value: bool|int|float|str):
+        if not self.editable:
+            raise ValueError("Cannot change value of non-editable telemetry variable")
+
+        if self.type != TelemetryVarType.from_value(value):
+            raise ValueError(f"Invalid type {type(value)} for telemetry variable")
+
+        if value != self.value:
+            self.value = value
+            self._changedFlag.set()
+    
+    def from_bytes_stream(self, stream: list[int]):
+        if self.type == TelemetryVarType.BOOL:
+            self.value = stream.pop(0) != 0
+        elif self.type == TelemetryVarType.INT:
+            self.value = struct.unpack('h', bytes(stream[:2]))[0]
+            del stream[:2]
+        elif self.type == TelemetryVarType.FLOAT:
+            self.value = struct.unpack('f', bytes(stream[:4]))[0]
+            del stream[:4]
+        elif self.type == TelemetryVarType.STRING:
+            size = int(stream.pop(0))
+            self.value = bytes(stream[:size]).decode('ascii')
+            del stream[:size]
+
+    def to_bytes(self) -> bytes:
+        if self.type == TelemetryVarType.BOOL:
+            return struct.pack('?', self.value)
+        elif self.type == TelemetryVarType.INT:
+            return struct.pack('h', self.value)
+        elif self.type == TelemetryVarType.FLOAT:
+            return struct.pack('f', self.value)
+        elif self.type == TelemetryVarType.STRING:
+            return struct.pack('B', len(self.value)) + self.value.encode('ascii')
+        
+
+class TelemetryVarType(str, Enum):
+    BOOL = 'bool'
+    INT = 'int'
+    FLOAT = 'float'
+    STRING = 'string'
+
+    @classmethod
+    def from_value(cls, v):
+        if isinstance(v, bool):
+            return cls.BOOL
+        elif isinstance(v, int):
+            return cls.INT
+        elif isinstance(v, float):
+            return cls.FLOAT
+        elif isinstance(v, str):
+            return cls.STRING
+        else:
+            raise ValueError(f"Invalid type {type(v)} for telemetry variable")

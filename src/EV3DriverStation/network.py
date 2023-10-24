@@ -25,6 +25,8 @@ from .controllers import ControllersManager, ControllerState
 from .robot import ProgramStatus, Robot, RobotMode, RobotStatus
 from .telemetry import Telemetry
 
+UDP_ROBOT_PORT = 5005
+
 WINDOWS_LINE_ENDING = b'\r\n'
 UNIX_LINE_ENDING = b'\n'
 LOCK_PATH = "robot.lock"
@@ -114,7 +116,7 @@ class RobotNetwork(QObject):
             message += axis_msg + struct.pack("i", buttons)
 
         try:
-            self.udp_socket.sendto(message, (host, 5005))
+            self.udp_socket.sendto(message, (host, UDP_ROBOT_PORT))
         except socket.gaierror:
             print("Impossible to send UDP message: invalid robot address.")
             traceback.print_exc()
@@ -137,12 +139,17 @@ class RobotNetwork(QObject):
         if address != '':
             self._set_robotAddress(address)
             if address == 'localhost':
-                self._set_connection_status(ConnectionStatus.CONNECTED)
-                self.connectionSucceed.emit('localhost')
+                self.handleConnectionSuccess()
                 self._set_signalStrength(5, 0)
-                self.robot.set_program_status(ProgramStatus.RUNNING)
             else:
                 self.ssh_start()
+
+    @Slot()
+    def handleConnectionSuccess(self):
+        self._set_connection_status(ConnectionStatus.CONNECTED)
+        self.connectionSucceed.emit('localhost')
+        threading.Thread(target=self.listen_udp_run).start()
+
 
     connectionFailed = Signal(str, str)
     connectionLost = Signal(str, str)
@@ -196,11 +203,28 @@ class RobotNetwork(QObject):
         return UdpState(controller1=pilot1, controller2=pilot2, 
                         enabled=self.robot.enabled, mode=self.robot.mode)
 
+    def listen_udp_run(self):
+        self.udp_socket.settimeout(0.1)
+        while self._connection_status == ConnectionStatus.CONNECTED:
+            try:
+                data, addr = self.udp_socket.recvfrom(2048)
+            except socket.timeout:
+                pass
+            except OSError:
+                continue
+            except Exception:
+                print("An error occured when receiving UDP message.")
+                traceback.print_exc()
+            else:
+                if addr[0] == self.robot_host or (addr[0] == '127.0.0.1' and self.robot_host=='localhost'):
+                    self.clearUdpResponseWatchdog.emit()
+                    self.parse_udp_response(data)
+
     #=======================#
     #== SSH Communication ==#
     #=======================#
     def ssh_start(self) -> None:
-        self._ssh_thread = threading.Thread(target=self.ssh_run, args=(self._robot_address,))
+        self._ssh_thread = threading.Thread(target=self.ssh_loop, args=(self._robot_address,))
         self._ssh_thread.start()
 
     def ssh_kill(self) -> None:
@@ -222,16 +246,21 @@ class RobotNetwork(QObject):
         self._ssh_thread = None
         self._ssh = None
 
-    def ssh_run(self, address: str):
+    def ssh_loop(self, address: str):
         ssh = self.ssh_connect(address)
+
         try:
             if ssh is None:
                 return
             self._ssh = ssh
 
-            # lostConnexionReason = self.refresh_ssh_status()
+            self.handleConnectionSuccess()
 
-            while self._ssh.is_connected:
+            self.handleConnectionSuccess()
+
+            lostConnexionReason = self.refresh_ssh_status()
+
+            while not lostConnexionReason:
                 if not self.refresh_signal_strength():
                     lostConnexionReason = "Robot didn't respond to ping in time."
                     break
@@ -399,9 +428,6 @@ class RobotNetwork(QObject):
             self.connectionFailed.emit(ConnectionFailedReason.RUNTIME, str(e))
             return None
 
-        # Robot is ready!
-        self._set_connection_status(ConnectionStatus.CONNECTED)
-        self.connectionSucceed.emit(ssh.host)
         return ssh
 
     def refresh_ssh_status(self) -> bool:

@@ -137,6 +137,44 @@ Rectangle {
                         PropertyAnimation { to: 1;   duration: 750 ; easing.type: Easing.InOutQuad }
                     }
                 }
+
+                Rectangle {
+                    visible: robot.programStatus === 'Starting'
+
+                    anchors.centerIn: parent
+                    width: parent.width - 40
+                    height: 30
+                    radius: 15
+
+                    color: Material.accentColor
+
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 60
+                        text: qsTr("Robot program is starting.")
+                        font.pixelSize: 15
+                        color: Material.foreground
+                    }
+
+                    SequentialAnimation on opacity {
+                        loops: Animation.Infinite
+                        running: true
+                        PropertyAnimation { to: 0.5; duration: 750 ; easing.type: Easing.InOutQuad }
+                        PropertyAnimation { to: 1;   duration: 750 ; easing.type: Easing.InOutQuad }
+                    }
+                }
+
+                Entry{
+                    visible: robot.programStatus === 'Running'
+                    name: qsTr("Program last Update:")
+                    value: robot.programLastUpdate
+                    isNA: robot.programLastUpdate === ""
+
+                    anchors.centerIn: parent
+                    height: 18
+                    width: parent.width - 40
+                }
             }
 
             // === Robot mode selector ===
