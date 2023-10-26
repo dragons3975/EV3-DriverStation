@@ -303,7 +303,7 @@ class ControllerState(NamedTuple):
     def is_neutral(self) -> bool:
         return self == ControllerState()
 
-    def with_deadzone(self, deadzone=.05) -> ControllerState:
+    def with_deadzone(self, deadzone=.1) -> ControllerState:
         return self._replace(
             leftX=self.leftX if abs(self.leftX) > deadzone else 0,
             leftY=self.leftY if abs(self.leftY) > deadzone else 0,
