@@ -12,11 +12,6 @@ ApplicationWindow  {
     maximumHeight: minimumHeight
 
     title: "EV3 Driver Station"
-
-    Material.theme: Material.Dark
-    Material.primary: Material.Indigo
-    Material.accent: Material.LightBlue
-
     Component.onCompleted: robot.install_event_filter(window)
     
 

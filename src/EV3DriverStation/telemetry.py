@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import struct
 import threading
 import traceback
@@ -218,18 +219,24 @@ class TelemetryVariable(QObject):
     
     def from_bytes(self, data: bytearray):
         if self._type == TelemetryVarType.BOOL:
-            self._value = data.pop(0) != 0
+            value = data.pop(0) != 0
         elif self._type == TelemetryVarType.INT:
-            self._value = struct.unpack('h', data[:2])[0]
+            value = struct.unpack('h', data[:2])[0]
             del data[:2]
         elif self._type == TelemetryVarType.FLOAT:
-            self._value = struct.unpack('f', data[:4])[0]
+            value = struct.unpack('f', data[:4])[0]
             del data[:4]
         elif self._type == TelemetryVarType.STRING:
             size = int(data.pop(0))
-            self._value = data[:size].decode('ascii')
+            value = data[:size].decode('ascii')
             del data[:size]
-        self.valueChanged.emit()
+        else:
+            return
+        if value != self.value:
+            self._value = value
+            self.valueChanged.emit()
+        else:
+            self.valueTransmitted.emit()
         return data
 
     def to_bytes(self) -> bytes:
@@ -263,23 +270,14 @@ class TelemetryVariable(QObject):
 
     # --- Value --- #
     valueChanged = Signal()
+    valueTransmitted = Signal()
     @Property("QVariant", notify=valueChanged) 
     def value(self) -> bool|int|float|str:
         return self._value
 
     @Property(str, notify=valueChanged)
     def formattedValue(self) -> str:
-        if self._type == TelemetryVarType.BOOL:
-            return 'true' if self.value else 'false'
-        elif self._type == TelemetryVarType.INT:
-            return str(self.value)
-        elif self._type == TelemetryVarType.FLOAT:
-            if abs(self.value) < 1e-15:
-                return "0.000"
-            return f'{self.value:.3f}' if 1e-3 < abs(self.value) < 1e3 else f'{self.value:.3e}'
-        elif self._type == TelemetryVarType.STRING:
-            return self.value
-        return ""
+        return TelemetryVarType.format_value(self.value, self.valueType)
 
     @Slot("QVariant", result=bool)
     def setValue(self, value: bool|int|float|str) -> bool:
@@ -289,13 +287,32 @@ class TelemetryVariable(QObject):
             value = TelemetryVarType.cast_to(value, self._type)
         except ValueError:
             return False
-        if value == self.value:
-            return False
 
+        validValue = True
+        if self._type == TelemetryVarType.STRING:
+            if re.match(r'^[\x00-\x7F]*$', value) is None:
+                validValue = False
+                value = re.sub(r'[^\x00-\x7F]', '', value)
+            if len(value) > 255:
+                validValue = False
+                value = value[:255]
+        elif self._type == TelemetryVarType.INT:
+            if abs(value) > 32767:
+                validValue = False
+                value = 32767 if value > 0 else -32767
+        elif self._type == TelemetryVarType.FLOAT:
+            convertedValue = float(struct.unpack('f', struct.pack('f', value))[0])
+            validValue = (TelemetryVarType.format_value(convertedValue, TelemetryVarType.FLOAT) 
+                         == TelemetryVarType.format_value(value, TelemetryVarType.FLOAT))
+            value = convertedValue
+            
+        if value == self.value:
+            return validValue
+            
         self._value = value
         self.valueChanged.emit()
         self._changedFlag.set()
-        return True
+        return validValue
         
 
 class TelemetryVarType(str, Enum):
@@ -334,3 +351,22 @@ class TelemetryVarType(str, Enum):
             return str(v)
         else:
             raise ValueError(f"Invalid type {t} for telemetry variable")
+
+    @classmethod
+    def format_value(cls, v, t: TelemetryVarType) -> str:
+        if t == TelemetryVarType.BOOL:
+            return 'true' if v else 'false'
+        elif t == TelemetryVarType.INT:
+            return str(v)
+        elif t == TelemetryVarType.FLOAT:
+            if v == float('inf'):
+                return "∞"
+            elif v == float('-inf'):
+                return "-∞"
+            elif abs(v) < 1e-15:
+                return "0.000"
+            else:
+                return f'{v:.3f}' if 1e-3 < abs(v) < 1e3 else f'{v:.3e}'
+        elif t == TelemetryVarType.STRING:
+            return v
+        return ""

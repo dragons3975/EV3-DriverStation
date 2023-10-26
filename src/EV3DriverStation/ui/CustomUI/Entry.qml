@@ -17,6 +17,8 @@ Item {
 
     property bool editable: false
     signal valueEdited(value: string) 
+    property bool valueSuccessfullyTransmitted: true
+    property bool entryInitialized: false
     onValueChanged: {
         if (editable){
             if (valueType == "bool")
@@ -24,10 +26,23 @@ Item {
             else
                 valueTextField.text = value
         }
+        if (entryInitialized){
+            highlightBackground.color = Material.frameColor
+            invalidValueAnimation.start()
+        } else {
+            entryInitialized = true
+        }
     }
     function invalidValue(){
-        if (editable)
+        if (editable){
             valueTextField.text = value
+            valueSuccessfullyTransmitted = true
+            highlightBackground.color = Material.color(Material.Red, Material.Shade500)
+            invalidValueAnimation.start()
+        }
+    }
+    function valueTransmitted(){
+        valueSuccessfullyTransmitted = true
     }
 
     property color color: Material.foreground
@@ -44,14 +59,34 @@ Item {
         anchors.fill: parent
 
         radius: height / 2
-
         color: Material.foreground
+
         opacity: hovered ? 0.1 : 0
-        Behavior on opacity {
-            NumberAnimation {
+        Behavior on opacity { PropertyAnimation { duration: 200 } }
+    }
+
+    Rectangle{
+        id: highlightBackground
+        anchors.fill: parent
+        radius: height / 2
+
+        color: Material.color(Material.Red, Material.Shade400)
+        SequentialAnimation on opacity {
+            id : invalidValueAnimation
+            running: false
+            PropertyAnimation {
+                to: .2
+                easing.type: Easing.InOutQuad
+                duration: 200
+            }
+            PropertyAnimation {
+                to: 0
+                easing.type: Easing.InOutQuad
                 duration: 200
             }
         }
+        opacity: 0
+
     }
 
 
@@ -92,24 +127,6 @@ Item {
         }
     }
 
-    MouseArea {
-        id: mouseArea
-        anchors.fill: parent
-
-        onClicked: {
-            root.clicked()
-            if (editable) {
-                if (valueType == "bool")
-                    valueSwitch.toggle()
-                else
-                    valueTextField.forceActiveFocus()
-            }
-        }
-        hoverEnabled: true
-        ToolTip.visible: tooltip ? hovered : false
-        ToolTip.text: tooltip 
-    }
-
     TextField{
         id: valueTextField
         visible: editable && valueType != "bool"
@@ -129,11 +146,14 @@ Item {
         height: parent.height
 
         font.pixelSize: parent.height * .6
+        font.bold: valueSuccessfullyTransmitted
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
 
         onEditingFinished: {
+            valueSuccessfullyTransmitted = false
             focus = false
+            entryInitialized = false
             root.valueEdited(text)
         }
 
@@ -156,6 +176,24 @@ Item {
         onCheckedChanged: {
             root.valueEdited(checked)
         }
+        enabled: !isNA
     }
 
+    MouseArea {
+        id: mouseArea
+        anchors.fill: parent
+
+        onClicked: {
+            root.clicked()
+            if (editable) {
+                if (valueType == "bool")
+                    valueSwitch.toggle()
+                else
+                    valueTextField.forceActiveFocus()
+            }
+        }
+        hoverEnabled: true
+        ToolTip.visible: tooltip ? hovered : false
+        ToolTip.text: tooltip 
+    }
 }

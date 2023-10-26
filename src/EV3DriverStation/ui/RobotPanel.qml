@@ -329,6 +329,7 @@ Rectangle {
                         if(!modelData.setValue(v))
                             invalidValue()
                     }
+                    Component.onCompleted: modelData.valueTransmitted.connect(valueTransmitted)
                 }
 
                 Label{
