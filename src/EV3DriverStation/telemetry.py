@@ -78,6 +78,13 @@ class Telemetry(QObject):
                 traceback.print_exc()
                 return False
         self.telemetryData_changed.emit()
+
+        for var in self._telemetry_data:
+            if var.editable:
+                if var.transmissionState is TelemetryVarTransmissionState.IN_TRANSMISSION:
+                    var.set_transmission_state(TelemetryVarTransmissionState.TRANSMISSION_MISSED)
+                elif var.transmissionState is TelemetryVarTransmissionState.TRANSMISSION_MISSED:
+                    var.set_transmission_state(TelemetryVarTransmissionState.CHANGED)
         return True
 
     def generate_udp_telemetry_update(self) -> bytes:
@@ -86,9 +93,11 @@ class Telemetry(QObject):
         """
         packet = bytearray()
         for i, var in enumerate(self._telemetry_data):
-            if var.editable and var.check_changed():
-                packet.append(i)
-                packet.extend(var.to_bytes())
+            if var.editable:
+                if var.transmissionState is TelemetryVarTransmissionState.CHANGED:
+                    packet.append(i)
+                    packet.extend(var.to_bytes())
+                    var.set_transmission_state(TelemetryVarTransmissionState.IN_TRANSMISSION)
         return bytes(packet)
 
 
@@ -206,16 +215,10 @@ class TelemetryVariable(QObject):
         self._editable = editable
         self._value = value
         self._type = TelemetryVarType.from_value(value)
-        self._changedFlag = threading.Event()
+        self._transmitionState: TelemetryVarTransmissionState = TelemetryVarTransmissionState.TRANSMITTED
 
     def __repr__(self):
         return f"TelemetryVariable({self.name}, {self._type}, {self.value})"
-
-    def check_changed(self):
-        if self._changedFlag.is_set():
-            self._changedFlag.clear()
-            return True
-        return False
     
     def from_bytes(self, data: bytearray):
         if self._type == TelemetryVarType.BOOL:
@@ -235,8 +238,7 @@ class TelemetryVariable(QObject):
         if value != self.value:
             self._value = value
             self.valueChanged.emit()
-        else:
-            self.valueTransmitted.emit()
+        self.set_transmission_state(TelemetryVarTransmissionState.TRANSMITTED)
         return data
 
     def to_bytes(self) -> bytes:
@@ -280,7 +282,7 @@ class TelemetryVariable(QObject):
         return TelemetryVarType.format_value(self.value, self.valueType)
 
     @Slot("QVariant", result=bool)
-    def setValue(self, value: bool|int|float|str) -> bool:
+    def sendValue(self, value: bool|int|float|str) -> bool:
         if not self.editable:
             return False
         try:
@@ -311,9 +313,19 @@ class TelemetryVariable(QObject):
             
         self._value = value
         self.valueChanged.emit()
-        self._changedFlag.set()
+        self.set_transmission_state(TelemetryVarTransmissionState.CHANGED)
         return validValue
         
+    # --- Transmission state --- #
+    transmissionStateSignal = Signal(str)
+    @Property(str, notify=transmissionStateSignal)
+    def transmissionState(self) -> str:
+        return self._transmitionState
+
+    def set_transmission_state(self, state: TelemetryVarTransmissionState):
+        if state != self._transmitionState:
+            self._transmitionState = state
+            self.transmissionStateSignal.emit(self._transmitionState)
 
 class TelemetryVarType(str, Enum):
     BOOL = 'bool'
@@ -370,3 +382,10 @@ class TelemetryVarType(str, Enum):
         elif t == TelemetryVarType.STRING:
             return v
         return ""
+
+
+class TelemetryVarTransmissionState(str, Enum):
+    TRANSMITTED = "transmitted"
+    TRANSMISSION_MISSED = "unknown"
+    IN_TRANSMISSION = "unknown"
+    CHANGED = "changed"

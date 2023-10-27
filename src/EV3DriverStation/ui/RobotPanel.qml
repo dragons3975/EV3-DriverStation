@@ -325,11 +325,11 @@ Rectangle {
                     value: modelData.formattedValue
                     valueType: modelData.valueType
                     editable: modelData.editable
+                    valueBold: modelData.transmissionState === 'transmitted'
                     onValueEdited: (v) => {
-                        if(!modelData.setValue(v))
+                        if(!modelData.sendValue(v))
                             invalidValue()
                     }
-                    Component.onCompleted: modelData.valueTransmitted.connect(valueTransmitted)
                 }
 
                 Label{
